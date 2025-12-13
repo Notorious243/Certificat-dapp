@@ -23,6 +23,9 @@ export const CONTRACT_ADDRESS = "0x2c777273e8ba3e19a4BC93A6A7bfed00Bdc2B99F"; //
 // Adresse de l'administrateur (optionnel, pour contrôles front-end supplémentaires)
 export const ADMIN_ADDRESS = "0x242EC2980Df1bfbF7d977F13721EE6E2EB01feeD"; // Laisser vide si non utilisé
 
+// URL de l'application (Production)
+export const APP_URL = "https://certificat-dapp.vercel.app";
+
 // ABI du contrat (Interface pour interagir avec le contrat)
 export const CONTRACT_ABI = [
 	{

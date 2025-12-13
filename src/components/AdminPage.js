@@ -17,7 +17,7 @@ import { Link } from 'react-router-dom';
 import CertificatePreview from './CertificatePreview';
 import { AdminTable } from './AdminTable';
 import { uploadToIPFS, unpinFromIPFS } from '../utils/ipfs';
-import { CONTRACT_ADDRESS, CONTRACT_ABI, ADMIN_ADDRESS, EMAILJS_CONFIG } from '../config';
+import { CONTRACT_ADDRESS, CONTRACT_ABI, ADMIN_ADDRESS, EMAILJS_CONFIG, APP_URL } from '../config';
 // import { calculateIpfsHash }s from '../utils/ipfsHash'; // Non utilisé car hash Pinata imprévisible
 
 
@@ -802,7 +802,7 @@ const AdminPage = () => {
 
             // Right: QR Code - Pointe vers la page de vérification
             try {
-                const verificationLink = `${window.location.origin}/?verify=${uniqueId}`;
+                const verificationLink = `${APP_URL}/?verify=${uniqueId}`;
                 const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verificationLink)}&color=1e3a8a`;
                 const qrImg = await loadImage(qrUrl);
                 doc.addImage(qrImg, 'PNG', width - 60, footerY - 15, 30, 30);
@@ -867,7 +867,7 @@ const AdminPage = () => {
                                 const emailParams = {
                                     to_name: `${data.firstName} ${data.lastName}`,
                                     to_email: data.email,
-                                    certificate_link: `${window.location.origin}/?hash=${hash}`,
+                                    certificate_link: `${APP_URL}/?hash=${hash}`,
                                     certificate_hash: hash,
                                     issue_date: new Date().toLocaleDateString('fr-FR')
                                 };
