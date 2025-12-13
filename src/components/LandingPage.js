@@ -391,7 +391,7 @@ const LandingPage = () => {
                     .logo-track {
                         display: flex;
                         width: fit-content;
-                        animation: marquee 10s linear infinite;
+                        animation: marquee 20s linear infinite;
                     }
                     .logo-track:hover {
                         animation-play-state: paused;
