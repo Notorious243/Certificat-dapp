@@ -381,29 +381,23 @@ const LandingPage = () => {
             </section>
 
             {/* Logo Cloud Section */}
-            <section className="py-20 bg-[#152B68]">
+            <section className="py-20 bg-[#152B68] overflow-hidden">
                 <style>{`
-                    @keyframes marqueeScroll {
-                        0% {
-                            transform: translateX(0%);
-                        }
-                        100% {
-                            transform: translateX(-25%);
-                        }
+                    @keyframes scroll {
+                        0% { transform: translateX(0); }
+                        100% { transform: translateX(-50%); }
                     }
-                    
-                    .marquee-container {
+                    .animate-scroll {
                         display: flex;
-                        width: fit-content;
-                        animation: marqueeScroll 20s linear infinite;
+                        width: max-content;
+                        animation: scroll 40s linear infinite;
                     }
-                    
-                    .marquee-container:hover {
+                    .animate-scroll:hover {
                         animation-play-state: paused;
                     }
                 `}</style>
                 <div className="container mx-auto px-6">
-                    <div className="relative mx-auto max-w-3xl">
+                    <div className="relative mx-auto max-w-6xl">
                         <h2 className="mb-10 text-center font-medium text-xl tracking-tight md:text-3xl">
                             <span className="text-white">Approuvé par les institutions.</span>
                             <br />
@@ -411,19 +405,41 @@ const LandingPage = () => {
                         </h2>
                         <div className="mx-auto my-5 h-px max-w-sm bg-white/30 [mask-image:linear-gradient(to_right,transparent,white,transparent)]" />
 
-                        <div className="overflow-hidden w-full relative max-w-5xl mx-auto select-none px-4 md:px-0">
+                        <div className="relative w-full overflow-hidden mask-image-gradient">
+                            {/* Gradients latéraux pour l'effet de fondu */}
                             <div className="absolute left-0 top-0 h-full w-20 z-10 pointer-events-none bg-gradient-to-r from-[#152B68] to-transparent" />
+                            <div className="absolute right-0 top-0 h-full w-20 z-10 pointer-events-none bg-gradient-to-l from-[#152B68] to-transparent" />
 
-                            <div className="flex will-change-transform">
-                                <div className="marquee-container flex items-center">
-                                    {/* On répète 4 fois la liste pour garantir un remplissage suffisant sur tous les écrans */}
-                                    {[...Array(4)].map((_, setIndex) => (
-                                        <div key={`set-${setIndex}`} className="flex items-center shrink-0">
+                            <div className="animate-scroll flex">
+                                {/* Première série de logos (répétée pour remplir l'écran) */}
+                                <div className="flex items-center shrink-0">
+                                    {[...Array(8)].map((_, setIndex) => (
+                                        <div key={`set-a-${setIndex}`} className="flex items-center">
                                             {companiesLogo.map((company, index) => (
                                                 <img
-                                                    key={`${setIndex}-${index}`}
-                                                    className={`mx-12 h-24 w-auto object-contain ${company.name === 'Unikin' ? 'translate-y-4' : ''}
-                                                        ${company.name === 'Numerique' ? 'scale-150' : ''}
+                                                    key={`a-${setIndex}-${index}`}
+                                                    className={`mx-8 md:mx-12 h-20 md:h-24 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
+                                                        ${company.name === 'Unikin' ? 'translate-y-2' : ''}
+                                                        ${company.name === 'Numerique' ? 'scale-125' : ''}
+                                                    `}
+                                                    src={company.logo}
+                                                    alt={company.name}
+                                                />
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Deuxième série de logos (IDENTIQUE à la première) pour la boucle parfaite */}
+                                <div className="flex items-center shrink-0">
+                                    {[...Array(8)].map((_, setIndex) => (
+                                        <div key={`set-b-${setIndex}`} className="flex items-center">
+                                            {companiesLogo.map((company, index) => (
+                                                <img
+                                                    key={`b-${setIndex}-${index}`}
+                                                    className={`mx-8 md:mx-12 h-20 md:h-24 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
+                                                        ${company.name === 'Unikin' ? 'translate-y-2' : ''}
+                                                        ${company.name === 'Numerique' ? 'scale-125' : ''}
                                                     `}
                                                     src={company.logo}
                                                     alt={company.name}
@@ -433,8 +449,6 @@ const LandingPage = () => {
                                     ))}
                                 </div>
                             </div>
-
-                            <div className="absolute right-0 top-0 h-full w-20 md:w-40 z-10 pointer-events-none bg-gradient-to-l from-[#152B68] to-transparent" />
                         </div>
 
                         <div className="mt-5 h-px bg-white/30 [mask-image:linear-gradient(to_right,transparent,white,transparent)]" />
