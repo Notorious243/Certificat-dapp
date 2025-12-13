@@ -17,7 +17,7 @@ import { Link } from 'react-router-dom';
 import CertificatePreview from './CertificatePreview';
 import { AdminTable } from './AdminTable';
 import { uploadToIPFS, unpinFromIPFS } from '../utils/ipfs';
-import { CONTRACT_ADDRESS, CONTRACT_ABI, ADMIN_ADDRESS, EMAILJS_CONFIG, APP_URL } from '../config';
+import { CONTRACT_ADDRESS, CONTRACT_ABI, ADMIN_ADDRESS, EMAILJS_CONFIG, APP_URL, NETWORK_CONFIG } from '../config';
 // import { calculateIpfsHash }s from '../utils/ipfsHash'; // Non utilisé car hash Pinata imprévisible
 
 
@@ -511,6 +511,32 @@ const AdminPage = () => {
         if (window.ethereum) {
             try {
                 const web3 = new Web3(window.ethereum);
+
+                // Tenter de basculer sur le réseau Tenderly
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: NETWORK_CONFIG.chainId }],
+                    });
+                } catch (switchError) {
+                    // Si le réseau n'existe pas, l'ajouter
+                    if (switchError.code === 4902) {
+                        try {
+                            await window.ethereum.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [NETWORK_CONFIG],
+                            });
+                        } catch (addError) {
+                            console.error("Erreur ajout réseau:", addError);
+                            setStatus({ type: 'error', message: 'Impossible d\'ajouter le réseau Tenderly.' });
+                            return;
+                        }
+                    } else {
+                        console.error("Erreur changement réseau:", switchError);
+                        // On continue quand même, peut-être que l'utilisateur est déjà sur le bon réseau ou qu'il s'agit d'un fork Mainnet
+                    }
+                }
+
                 await window.ethereum.request({ method: 'eth_requestAccounts' });
                 const accounts = await web3.eth.getAccounts();
                 const currentAccount = accounts[0];

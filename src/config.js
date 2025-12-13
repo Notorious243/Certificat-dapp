@@ -26,6 +26,19 @@ export const ADMIN_ADDRESS = "0x242EC2980Df1bfbF7d977F13721EE6E2EB01feeD"; // La
 // URL de l'application (Production)
 export const APP_URL = "https://certificat-dapp.vercel.app";
 
+// Configuration Réseau (Tenderly Virtual Testnet)
+export const NETWORK_CONFIG = {
+	chainId: "0x1", // 1 en hexadécimal
+	chainName: "GouvChain (Tenderly)",
+	rpcUrls: ["https://virtual.mainnet.eu.rpc.tenderly.co/109ea6ff-fa0b-45eb-ab96-3b83bf241d22"],
+	nativeCurrency: {
+		name: "Virtual ETH",
+		symbol: "vETH",
+		decimals: 18
+	},
+	blockExplorerUrls: ["https://dashboard.tenderly.co/explorer"] // Explorer générique ou spécifique si dispo
+};
+
 // ABI du contrat (Interface pour interagir avec le contrat)
 export const CONTRACT_ABI = [
 	{
