@@ -28,10 +28,10 @@ export const NETWORK_CONFIG = {
 };
 
 // Adresse du contrat déployé (ex: sur Sepolia)
-export const CONTRACT_ADDRESS = "0x2c777273e8ba3e19a4BC93A6A7bfed00Bdc2B99F"; // À REMPLACER
+export const CONTRACT_ADDRESS = "0xF3F98d0eA374cDE1b886c4B82674a7095D9D80df"; // À REMPLACER
 
 // Adresse de l'administrateur (optionnel, pour contrôles front-end supplémentaires)
-export const ADMIN_ADDRESS = "0x242EC2980Df1bfbF7d977F13721EE6E2EB01feeD"; // Laisser vide si non utilisé
+export const ADMIN_ADDRESS = "0x688a04D2a10197E7A66C0A8116575AC1197edC7f"; // Laisser vide si non utilisé
 
 // URL de l'application (Production)
 export const APP_URL = "https://certificat-dapp.vercel.app";
@@ -244,9 +244,7 @@ export const CONTRACT_ABI = [
 		"stateMutability": "view",
 		"type": "function"
 	}
-
 ]
-
 
 // =============================================================================
 // 3. CONFIGURATION EMAILJS (NOTIFICATION)
