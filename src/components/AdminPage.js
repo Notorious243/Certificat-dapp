@@ -73,7 +73,7 @@ const AdminSidebarHeader = ({ open }) => (
     </aside>
 );
 
-const StatsCard = ({ title, value, icon, gradient, trend }) => (
+const StatsCard = ({ title, value, icon, gradient, trend, details }) => (
     <Card className={`border-none shadow-lg ${gradient} text-white overflow-hidden relative`}>
         <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-8 -mt-8 blur-2xl"></div>
         <div className="absolute bottom-0 left-0 w-20 h-20 bg-black/10 rounded-full -ml-6 -mb-6 blur-xl"></div>
@@ -88,8 +88,13 @@ const StatsCard = ({ title, value, icon, gradient, trend }) => (
                 </span>
             </div>
             <div>
-                <p className="text-blue-100 font-medium text-sm mb-1">{title}</p>
-                <h3 className="text-3xl font-bold tracking-tight">{value}</h3>
+                <h3 className="text-blue-100 text-sm font-medium mb-1">{title}</h3>
+                <p className="text-2xl font-bold mb-1">{value}</p>
+                {details && (
+                    <p className="text-xs text-blue-200/80 font-mono truncate max-w-full mt-1">
+                        {details}
+                    </p>
+                )}
             </div>
         </CardContent>
     </Card>
@@ -1441,6 +1446,7 @@ const AdminPage = () => {
                                         icon={<div className="h-6 w-6 text-white font-bold flex items-center justify-center">Ξ</div>}
                                         gradient="bg-blue-900"
                                         trend={`≈ $${(parseFloat(ethBalance) * ethPrice).toFixed(2)} USD`}
+                                        details={currentUser?.walletAddress ? `Compte: ${currentUser.walletAddress.substring(0, 6)}...${currentUser.walletAddress.substring(38)}` : (localStorage.getItem('metamaskAccount') ? `Compte: ${localStorage.getItem('metamaskAccount').substring(0, 6)}...${localStorage.getItem('metamaskAccount').substring(38)}` : 'Non connecté')}
                                     />
                                     <StatsCard
                                         title="Total Documents Enregistrés"
