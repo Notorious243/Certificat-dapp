@@ -384,16 +384,16 @@ const LandingPage = () => {
             {/* Logo Cloud Section */}
             <section className="py-20 bg-[#152B68] overflow-hidden">
                 <style>{`
-                    @keyframes scroll {
-                        0% { transform: translateX(0); }
+                    @keyframes marquee {
+                        0% { transform: translateX(0%); }
                         100% { transform: translateX(-50%); }
                     }
-                    .animate-scroll {
+                    .logo-track {
                         display: flex;
-                        width: max-content;
-                        animation: scroll 25s linear infinite;
+                        width: fit-content;
+                        animation: marquee 30s linear infinite;
                     }
-                    .animate-scroll:hover {
+                    .logo-track:hover {
                         animation-play-state: paused;
                     }
                 `}</style>
@@ -406,49 +406,44 @@ const LandingPage = () => {
                         </h2>
                         <div className="mx-auto my-5 h-px max-w-sm bg-white/30 [mask-image:linear-gradient(to_right,transparent,white,transparent)]" />
 
-                        <div className="relative w-full overflow-hidden mask-image-gradient">
+                        <div className="relative w-full overflow-hidden">
                             {/* Gradients latéraux pour l'effet de fondu */}
                             <div className="absolute left-0 top-0 h-full w-20 z-10 pointer-events-none bg-gradient-to-r from-[#152B68] to-transparent" />
                             <div className="absolute right-0 top-0 h-full w-20 z-10 pointer-events-none bg-gradient-to-l from-[#152B68] to-transparent" />
 
-                            <div className="animate-scroll flex">
-                                {/* Première série de logos (répétée pour remplir l'écran) */}
-                                <div className="flex items-center shrink-0">
-                                    {[...Array(8)].map((_, setIndex) => (
-                                        <div key={`set-a-${setIndex}`} className="flex items-center">
-                                            {companiesLogo.map((company, index) => (
-                                                <img
-                                                    key={`a-${setIndex}-${index}`}
-                                                    className={`mx-8 md:mx-12 h-20 md:h-24 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
-                                                        ${company.name === 'Unikin' ? 'translate-y-2' : ''}
-                                                        ${company.name === 'Numerique' ? 'scale-125' : ''}
-                                                    `}
-                                                    src={company.logo}
-                                                    alt={company.name}
-                                                />
-                                            ))}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Deuxième série de logos (IDENTIQUE à la première) pour la boucle parfaite */}
-                                <div className="flex items-center shrink-0">
-                                    {[...Array(8)].map((_, setIndex) => (
-                                        <div key={`set-b-${setIndex}`} className="flex items-center">
-                                            {companiesLogo.map((company, index) => (
-                                                <img
-                                                    key={`b-${setIndex}-${index}`}
-                                                    className={`mx-8 md:mx-12 h-20 md:h-24 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
-                                                        ${company.name === 'Unikin' ? 'translate-y-2' : ''}
-                                                        ${company.name === 'Numerique' ? 'scale-125' : ''}
-                                                    `}
-                                                    src={company.logo}
-                                                    alt={company.name}
-                                                />
-                                            ))}
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="logo-track">
+                                {/* Première moitié */}
+                                {[...Array(4)].map((_, repeatIndex) => (
+                                    <div key={`first-${repeatIndex}`} className="flex items-center shrink-0">
+                                        {companiesLogo.map((company, index) => (
+                                            <img
+                                                key={`logo-1-${repeatIndex}-${index}`}
+                                                className={`mx-10 md:mx-16 h-16 md:h-20 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
+                                                    ${company.name === 'Unikin' ? 'translate-y-1' : ''}
+                                                    ${company.name === 'Numerique' ? 'scale-110' : ''}
+                                                `}
+                                                src={company.logo}
+                                                alt={company.name}
+                                            />
+                                        ))}
+                                    </div>
+                                ))}
+                                {/* Deuxième moitié (copie exacte pour boucle infinie) */}
+                                {[...Array(4)].map((_, repeatIndex) => (
+                                    <div key={`second-${repeatIndex}`} className="flex items-center shrink-0">
+                                        {companiesLogo.map((company, index) => (
+                                            <img
+                                                key={`logo-2-${repeatIndex}-${index}`}
+                                                className={`mx-10 md:mx-16 h-16 md:h-20 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
+                                                    ${company.name === 'Unikin' ? 'translate-y-1' : ''}
+                                                    ${company.name === 'Numerique' ? 'scale-110' : ''}
+                                                `}
+                                                src={company.logo}
+                                                alt={company.name}
+                                            />
+                                        ))}
+                                    </div>
+                                ))}
                             </div>
                         </div>
 
