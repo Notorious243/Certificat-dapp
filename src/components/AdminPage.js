@@ -513,22 +513,50 @@ const AdminPage = () => {
 
         if (window.ethereum) {
             try {
+                setStatus({ type: 'loading', message: 'Connexion en cours...' });
+
                 // 1. Demander la connexion au compte
-                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                let accounts;
+                try {
+                    accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                } catch (accountError) {
+                    console.error("Erreur demande compte:", accountError);
+                    setStatus({ type: 'error', message: 'Connexion refusée par l\'utilisateur.' });
+                    return;
+                }
+
+                if (!accounts || accounts.length === 0) {
+                    setStatus({ type: 'error', message: 'Aucun compte détecté. Veuillez vous connecter à MetaMask.' });
+                    return;
+                }
+
                 const currentAccount = accounts[0];
+                console.log("Compte connecté:", currentAccount);
 
                 // 2. Vérifier et changer de réseau si nécessaire
-                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-                if (chainId !== NETWORK_CONFIG.CHAIN_ID_HEX) {
+                let chainId;
+                try {
+                    chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                    console.log("Chain ID actuel:", chainId, "Attendu:", NETWORK_CONFIG.CHAIN_ID_HEX);
+                } catch (chainError) {
+                    console.error("Erreur récupération chainId:", chainError);
+                    // Sur mobile, parfois le chainId n'est pas immédiatement disponible
+                    // On continue quand même
+                    chainId = null;
+                }
+
+                if (chainId && chainId !== NETWORK_CONFIG.CHAIN_ID_HEX) {
                     try {
+                        setStatus({ type: 'loading', message: 'Changement de réseau vers GouvChain...' });
                         await window.ethereum.request({
                             method: 'wallet_switchEthereumChain',
                             params: [{ chainId: NETWORK_CONFIG.CHAIN_ID_HEX }],
                         });
                     } catch (switchError) {
                         // Si le réseau n'existe pas, l'ajouter
-                        if (switchError.code === 4902) {
+                        if (switchError.code === 4902 || switchError.message?.includes('wallet_addEthereumChain')) {
                             try {
+                                setStatus({ type: 'loading', message: 'Ajout du réseau GouvChain...' });
                                 await window.ethereum.request({
                                     method: 'wallet_addEthereumChain',
                                     params: [
@@ -547,13 +575,22 @@ const AdminPage = () => {
                                 });
                             } catch (addError) {
                                 console.error("Erreur ajout réseau:", addError);
-                                alert("Impossible d'ajouter le réseau Tenderly. Veuillez le faire manuellement.");
-                                return;
+                                // Sur mobile, on continue quand même - le réseau sera ajouté manuellement
+                                if (!isMobileDevice) {
+                                    setStatus({ type: 'error', message: "Impossible d'ajouter le réseau. Veuillez le configurer manuellement dans MetaMask." });
+                                    return;
+                                }
                             }
+                        } else if (switchError.code === 4001) {
+                            setStatus({ type: 'error', message: 'Changement de réseau refusé par l\'utilisateur.' });
+                            return;
                         } else {
                             console.error("Erreur changement réseau:", switchError);
-                            alert("Veuillez changer de réseau pour utiliser l'application.");
-                            return;
+                            // Sur mobile, on continue quand même
+                            if (!isMobileDevice) {
+                                setStatus({ type: 'error', message: 'Veuillez changer de réseau pour GouvChain Testnet.' });
+                                return;
+                            }
                         }
                     }
                 }
@@ -561,13 +598,15 @@ const AdminPage = () => {
                 setAccount(currentAccount);
                 const web3 = new Web3(window.ethereum);
 
+                // Vérification admin avec message plus clair
                 if (ADMIN_ADDRESS && currentAccount.toLowerCase() !== ADMIN_ADDRESS.toLowerCase()) {
                     setIsAdmin(false);
-                    setStatus({ type: 'error', message: 'Accès refusé. Vous n\'êtes pas l\'administrateur.' });
+                    setStatus({ type: 'error', message: `Accès refusé. Ce compte (${currentAccount.substring(0, 6)}...${currentAccount.substring(38)}) n'est pas l'administrateur autorisé.` });
                     return;
                 }
 
                 setIsAdmin(true);
+                setStatus({ type: 'loading', message: 'Initialisation du contrat...' });
 
                 // Stocker la connexion dans localStorage
                 localStorage.setItem('metamaskConnected', 'true');
@@ -579,9 +618,11 @@ const AdminPage = () => {
 
                     // Fetch stats immediately after connection using the new instance
                     await fetchStats(contractInstance);
+                    setStatus({ type: 'success', message: 'Connecté avec succès !' });
+                    setTimeout(() => setStatus(null), 3000);
                 } catch (contractError) {
                     console.error("Contract init error:", contractError);
-                    setStatus({ type: 'error', message: 'Erreur d\'initialisation du contrat.' });
+                    setStatus({ type: 'error', message: 'Erreur d\'initialisation du contrat. Vérifiez le réseau.' });
                 }
 
                 // Fetch balance immediately after connection
@@ -589,7 +630,7 @@ const AdminPage = () => {
 
             } catch (error) {
                 console.error("Connection error:", error);
-                setStatus({ type: 'error', message: 'Échec de la connexion au portefeuille.' });
+                setStatus({ type: 'error', message: `Échec de la connexion: ${error.message || 'Erreur inconnue'}` });
             }
         } else if (isMobileDevice) {
             // Sur mobile sans MetaMask browser intégré, rediriger vers l'app MetaMask

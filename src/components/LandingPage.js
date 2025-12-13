@@ -73,18 +73,16 @@ const LandingPage = () => {
         }
 
         try {
-            // Initialisation Web3
+            // Initialisation Web3 - avec fallback RPC pour lecture seule
             let web3;
+            const RPC_URL = "https://virtual.mainnet.eu.rpc.tenderly.co/beea34ad-7bec-471c-a3f1-8f173044901b";
+
             if (window.ethereum) {
                 web3 = new Web3(window.ethereum);
             } else {
-                console.warn("MetaMask non détecté. Lecture seule.");
-                setVerificationResult({
-                    status: "not_found",
-                    message: "Veuillez installer MetaMask pour vérifier."
-                });
-                setLoading(false);
-                return;
+                // Fallback : utiliser le RPC directement (lecture seule)
+                console.log("MetaMask non détecté, utilisation du RPC en lecture seule");
+                web3 = new Web3(new Web3.providers.HttpProvider(RPC_URL));
             }
 
             const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
@@ -97,7 +95,7 @@ const LandingPage = () => {
 
             if (isIpfsHash) {
                 // Recherche par hash IPFS via les événements
-                console.log("Recherche par hash IPFS...");
+                console.log("Recherche par hash IPFS:", idToVerify);
 
                 try {
                     const events = await contract.getPastEvents('CertificatEnregistre', {
@@ -111,13 +109,16 @@ const LandingPage = () => {
                     let foundCert = null;
                     for (const event of events) {
                         const certId = event.returnValues.idUnique;
-                        // Vérifier si le certificat existe
-                        const isRegistered = await contract.methods.estEnregistre(certId).call();
-                        if (isRegistered) {
-                            const cert = await contract.methods.getCertificat(certId).call();
-                            if (cert.hashDocument === idToVerify) {
-                                foundCert = cert;
+                        const eventHash = event.returnValues.hashDocument;
+
+                        // Comparer directement le hash de l'événement
+                        if (eventHash === idToVerify) {
+                            // Vérifier si le certificat existe et récupérer les détails
+                            const isRegistered = await contract.methods.estEnregistre(certId).call();
+                            if (isRegistered) {
+                                foundCert = await contract.methods.getCertificat(certId).call();
                                 certIdBytes32 = certId;
+                                console.log("Certificat trouvé!", foundCert);
                                 break;
                             }
                         }
@@ -390,7 +391,7 @@ const LandingPage = () => {
                     .animate-scroll {
                         display: flex;
                         width: max-content;
-                        animation: scroll 15s linear infinite;
+                        animation: scroll 40s linear infinite;
                     }
                     .animate-scroll:hover {
                         animation-play-state: paused;
