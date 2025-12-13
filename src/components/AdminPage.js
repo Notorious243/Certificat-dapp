@@ -593,15 +593,41 @@ const AdminPage = () => {
                             }
                         }
                     }
+
+                    // IMPORTANT: Après changement de réseau, attendre et re-demander les comptes
+                    if (isMobileDevice) {
+                        setStatus({ type: 'loading', message: 'Synchronisation après changement de réseau...' });
+                        await new Promise(resolve => setTimeout(resolve, 1500)); // Attendre 1.5s
+                    }
                 }
 
-                setAccount(currentAccount);
+                // Re-demander les comptes après le changement de réseau (crucial pour mobile)
+                let finalAccount = currentAccount;
+                try {
+                    const refreshedAccounts = await window.ethereum.request({ method: 'eth_accounts' });
+                    if (refreshedAccounts && refreshedAccounts.length > 0) {
+                        finalAccount = refreshedAccounts[0];
+                        console.log("Compte après refresh:", finalAccount);
+                    } else {
+                        // Si pas de compte, re-demander l'autorisation
+                        const newAccounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                        if (newAccounts && newAccounts.length > 0) {
+                            finalAccount = newAccounts[0];
+                            console.log("Compte après nouvelle demande:", finalAccount);
+                        }
+                    }
+                } catch (refreshError) {
+                    console.error("Erreur refresh comptes:", refreshError);
+                    // Continuer avec le compte initial
+                }
+
+                setAccount(finalAccount);
                 const web3 = new Web3(window.ethereum);
 
                 // Vérification admin avec message plus clair
-                if (ADMIN_ADDRESS && currentAccount.toLowerCase() !== ADMIN_ADDRESS.toLowerCase()) {
+                if (ADMIN_ADDRESS && finalAccount.toLowerCase() !== ADMIN_ADDRESS.toLowerCase()) {
                     setIsAdmin(false);
-                    setStatus({ type: 'error', message: `Accès refusé. Ce compte (${currentAccount.substring(0, 6)}...${currentAccount.substring(38)}) n'est pas l'administrateur autorisé.` });
+                    setStatus({ type: 'error', message: `Accès refusé. Ce compte (${finalAccount.substring(0, 6)}...${finalAccount.substring(38)}) n'est pas l'administrateur autorisé.` });
                     return;
                 }
 
@@ -610,7 +636,7 @@ const AdminPage = () => {
 
                 // Stocker la connexion dans localStorage
                 localStorage.setItem('metamaskConnected', 'true');
-                localStorage.setItem('metamaskAccount', currentAccount);
+                localStorage.setItem('metamaskAccount', finalAccount);
 
                 try {
                     const contractInstance = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
@@ -626,7 +652,7 @@ const AdminPage = () => {
                 }
 
                 // Fetch balance immediately after connection
-                await fetchBalance(currentAccount);
+                await fetchBalance(finalAccount);
 
             } catch (error) {
                 console.error("Connection error:", error);
