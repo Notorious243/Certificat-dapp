@@ -510,37 +510,54 @@ const AdminPage = () => {
     const connectWallet = async () => {
         if (window.ethereum) {
             try {
-                const web3 = new Web3(window.ethereum);
+                // 1. Demander la connexion au compte
+                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                const currentAccount = accounts[0];
 
-                // Tenter de basculer sur le réseau Tenderly
-                try {
-                    await window.ethereum.request({
-                        method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: NETWORK_CONFIG.chainId }],
-                    });
-                } catch (switchError) {
-                    // Si le réseau n'existe pas, l'ajouter
-                    if (switchError.code === 4902) {
-                        try {
-                            await window.ethereum.request({
-                                method: 'wallet_addEthereumChain',
-                                params: [NETWORK_CONFIG],
-                            });
-                        } catch (addError) {
-                            console.error("Erreur ajout réseau:", addError);
-                            setStatus({ type: 'error', message: 'Impossible d\'ajouter le réseau Tenderly.' });
+                // 2. Vérifier et changer de réseau si nécessaire
+                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                if (chainId !== NETWORK_CONFIG.CHAIN_ID_HEX) {
+                    try {
+                        await window.ethereum.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: NETWORK_CONFIG.CHAIN_ID_HEX }],
+                        });
+                    } catch (switchError) {
+                        // Si le réseau n'existe pas, l'ajouter
+                        if (switchError.code === 4902) {
+                            try {
+                                await window.ethereum.request({
+                                    method: 'wallet_addEthereumChain',
+                                    params: [
+                                        {
+                                            chainId: NETWORK_CONFIG.CHAIN_ID_HEX,
+                                            chainName: NETWORK_CONFIG.NAME,
+                                            rpcUrls: [NETWORK_CONFIG.RPC_URL],
+                                            nativeCurrency: {
+                                                name: NETWORK_CONFIG.SYMBOL,
+                                                symbol: NETWORK_CONFIG.SYMBOL,
+                                                decimals: 18,
+                                            },
+                                            blockExplorerUrls: [NETWORK_CONFIG.BLOCK_EXPLORER],
+                                        },
+                                    ],
+                                });
+                            } catch (addError) {
+                                console.error("Erreur ajout réseau:", addError);
+                                alert("Impossible d'ajouter le réseau Tenderly. Veuillez le faire manuellement.");
+                                return;
+                            }
+                        } else {
+                            console.error("Erreur changement réseau:", switchError);
+                            alert("Veuillez changer de réseau pour utiliser l'application.");
                             return;
                         }
-                    } else {
-                        console.error("Erreur changement réseau:", switchError);
-                        // On continue quand même, peut-être que l'utilisateur est déjà sur le bon réseau ou qu'il s'agit d'un fork Mainnet
                     }
                 }
 
-                await window.ethereum.request({ method: 'eth_requestAccounts' });
-                const accounts = await web3.eth.getAccounts();
-                const currentAccount = accounts[0];
                 setAccount(currentAccount);
+                const web3 = new Web3(window.ethereum);
+                setWeb3(web3);
 
                 if (ADMIN_ADDRESS && currentAccount.toLowerCase() !== ADMIN_ADDRESS.toLowerCase()) {
                     setIsAdmin(false);

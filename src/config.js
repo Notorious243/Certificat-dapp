@@ -14,8 +14,18 @@ export const PINATA_CONFIG = {
 };
 
 // =============================================================================
-// 2. CONFIGURATION BLOCKCHAIN (SMART CONTRACT)
+// 2. CONFIGURATION BLOCKCHAIN (SMART CONTRACT & NETWORK)
 // =============================================================================
+
+// Configuration du Réseau (Tenderly)
+export const NETWORK_CONFIG = {
+	RPC_URL: "https://virtual.mainnet.eu.rpc.tenderly.co/beea34ad-7bec-471c-a3f1-8f173044901b",
+	CHAIN_ID: 243,
+	CHAIN_ID_HEX: "0xF3", // 243 en Hexadécimal
+	NAME: "GouvChain Testnet",
+	SYMBOL: "ETH",
+	BLOCK_EXPLORER: "https://dashboard.tenderly.co/explorer" // Générique
+};
 
 // Adresse du contrat déployé (ex: sur Sepolia)
 export const CONTRACT_ADDRESS = "0x2c777273e8ba3e19a4BC93A6A7bfed00Bdc2B99F"; // À REMPLACER
@@ -25,19 +35,6 @@ export const ADMIN_ADDRESS = "0x242EC2980Df1bfbF7d977F13721EE6E2EB01feeD"; // La
 
 // URL de l'application (Production)
 export const APP_URL = "https://certificat-dapp.vercel.app";
-
-// Configuration Réseau (Tenderly Virtual Testnet)
-export const NETWORK_CONFIG = {
-	chainId: "0x1", // 1 en hexadécimal
-	chainName: "GouvChain (Tenderly)",
-	rpcUrls: ["https://virtual.mainnet.eu.rpc.tenderly.co/109ea6ff-fa0b-45eb-ab96-3b83bf241d22"],
-	nativeCurrency: {
-		name: "Virtual ETH",
-		symbol: "vETH",
-		decimals: 18
-	},
-	blockExplorerUrls: ["https://dashboard.tenderly.co/explorer"] // Explorer générique ou spécifique si dispo
-};
 
 // ABI du contrat (Interface pour interagir avec le contrat)
 export const CONTRACT_ABI = [
