@@ -508,6 +508,9 @@ const AdminPage = () => {
     }, []);
 
     const connectWallet = async () => {
+        // Détecter si on est sur mobile
+        const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
         if (window.ethereum) {
             try {
                 // 1. Demander la connexion au compte
@@ -557,7 +560,6 @@ const AdminPage = () => {
 
                 setAccount(currentAccount);
                 const web3 = new Web3(window.ethereum);
-                setWeb3(web3);
 
                 if (ADMIN_ADDRESS && currentAccount.toLowerCase() !== ADMIN_ADDRESS.toLowerCase()) {
                     setIsAdmin(false);
@@ -589,6 +591,11 @@ const AdminPage = () => {
                 console.error("Connection error:", error);
                 setStatus({ type: 'error', message: 'Échec de la connexion au portefeuille.' });
             }
+        } else if (isMobileDevice) {
+            // Sur mobile sans MetaMask browser intégré, rediriger vers l'app MetaMask
+            const currentUrl = window.location.href;
+            const metamaskDeepLink = `https://metamask.app.link/dapp/${currentUrl.replace(/^https?:\/\//, '')}`;
+            window.location.href = metamaskDeepLink;
         } else {
             setStatus({ type: 'error', message: 'Veuillez installer MetaMask !' });
         }

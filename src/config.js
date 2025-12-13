@@ -34,7 +34,7 @@ export const CONTRACT_ADDRESS = "0xF3F98d0eA374cDE1b886c4B82674a7095D9D80df"; //
 export const ADMIN_ADDRESS = "0x688a04D2a10197E7A66C0A8116575AC1197edC7f"; // Laisser vide si non utilisé
 
 // URL de l'application (Production)
-export const APP_URL = "https://certificat-dapp.vercel.app";
+export const APP_URL = "https://gouvchain.vercel.app";
 
 // ABI du contrat (Interface pour interagir avec le contrat)
 export const CONTRACT_ABI = [
