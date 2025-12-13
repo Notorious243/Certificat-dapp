@@ -420,7 +420,7 @@ const LandingPage = () => {
                                                 key={`logo-1-${repeatIndex}-${index}`}
                                                 className={`mx-10 md:mx-16 h-16 md:h-20 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
                                                     ${company.name === 'Unikin' ? 'translate-y-1' : ''}
-                                                    ${company.name === 'Numerique' ? 'scale-110' : ''}
+                                                    ${company.name === 'Numerique' ? 'scale-150' : ''}
                                                 `}
                                                 src={company.logo}
                                                 alt={company.name}
@@ -436,7 +436,7 @@ const LandingPage = () => {
                                                 key={`logo-2-${repeatIndex}-${index}`}
                                                 className={`mx-10 md:mx-16 h-16 md:h-20 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
                                                     ${company.name === 'Unikin' ? 'translate-y-1' : ''}
-                                                    ${company.name === 'Numerique' ? 'scale-110' : ''}
+                                                    ${company.name === 'Numerique' ? 'scale-150' : ''}
                                                 `}
                                                 src={company.logo}
                                                 alt={company.name}
