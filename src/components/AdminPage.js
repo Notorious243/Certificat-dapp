@@ -622,7 +622,54 @@ const AdminPage = () => {
                 }
 
                 setAccount(finalAccount);
-                const web3 = new Web3(window.ethereum);
+
+                // Créer Web3 avec vérification de connexion
+                let web3 = new Web3(window.ethereum);
+
+                // Sur mobile, vérifier que la connexion fonctionne
+                if (isMobileDevice) {
+                    try {
+                        // Test simple pour vérifier que Web3 fonctionne
+                        const testChainId = await web3.eth.getChainId();
+                        console.log("Chain ID vérifié sur mobile:", testChainId);
+
+                        // Vérifier si on est sur le bon réseau
+                        if (Number(testChainId) !== NETWORK_CONFIG.CHAIN_ID) {
+                            console.warn("Réseau incorrect sur mobile, chainId:", testChainId);
+                            setStatus({ type: 'loading', message: 'Configuration du réseau GouvChain...' });
+
+                            // Essayer de forcer le changement de réseau
+                            try {
+                                await window.ethereum.request({
+                                    method: 'wallet_switchEthereumChain',
+                                    params: [{ chainId: NETWORK_CONFIG.CHAIN_ID_HEX }],
+                                });
+                            } catch (e) {
+                                console.log("Changement réseau échoué, ajout du réseau...");
+                                try {
+                                    await window.ethereum.request({
+                                        method: 'wallet_addEthereumChain',
+                                        params: [{
+                                            chainId: NETWORK_CONFIG.CHAIN_ID_HEX,
+                                            chainName: NETWORK_CONFIG.NAME,
+                                            rpcUrls: [NETWORK_CONFIG.RPC_URL],
+                                            nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                                        }],
+                                    });
+                                } catch (addErr) {
+                                    console.error("Impossible d'ajouter le réseau:", addErr);
+                                }
+                            }
+
+                            // Recréer Web3 après changement
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            web3 = new Web3(window.ethereum);
+                        }
+                    } catch (testError) {
+                        console.error("Erreur test Web3 sur mobile:", testError);
+                        // Continuer quand même
+                    }
+                }
 
                 // Vérification admin avec message plus clair
                 if (ADMIN_ADDRESS && finalAccount.toLowerCase() !== ADMIN_ADDRESS.toLowerCase()) {
@@ -641,6 +688,14 @@ const AdminPage = () => {
                 try {
                     const contractInstance = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
                     setContract(contractInstance);
+
+                    // Vérifier que le contrat est accessible
+                    try {
+                        const authority = await contractInstance.methods.autorite().call();
+                        console.log("Contrat vérifié, autorité:", authority);
+                    } catch (contractCheckError) {
+                        console.warn("Impossible de vérifier le contrat:", contractCheckError);
+                    }
 
                     // Fetch stats immediately after connection using the new instance
                     await fetchStats(contractInstance);
