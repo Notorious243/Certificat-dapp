@@ -391,7 +391,7 @@ const LandingPage = () => {
                     .animate-scroll {
                         display: flex;
                         width: max-content;
-                        animation: scroll 40s linear infinite;
+                        animation: scroll 25s linear infinite;
                     }
                     .animate-scroll:hover {
                         animation-play-state: paused;
