@@ -347,6 +347,21 @@ const AdminPage = () => {
                                 .withFaceLandmarks()
                                 .withFaceDescriptor();
 
+                            // DISTANCE CHECK (Remplissage Progressif)
+                            if (detections) {
+                                const boxArea = detections.detection.box.width * detections.detection.box.height;
+                                const videoArea = video.videoWidth * video.videoHeight;
+                                const ratio = boxArea / videoArea;
+
+                                // Si trop loin (< 4.5% de l'image)
+                                if (ratio < 0.045) {
+                                    setScanMessage('Rapprochez-vous du cercle ! 🔍');
+                                    // Ralentir la progression ou reculer légèrement
+                                    setScanProgress(prev => Math.max(prev - 0.5, 0));
+                                    return; // Skip capture loop for this frame
+                                }
+                            }
+
                             // QUALITY CHECK: Ensure high confidence capture (Apple Style)
                             if (detections && detections.detection.score > 0.85) {
                                 // Visage détecté avec haute précision ! Capturer l'image
@@ -2270,6 +2285,23 @@ const AdminPage = () => {
                                     className="absolute -inset-3 rounded-full border-4 border-dashed opacity-50"
                                     style={{ borderColor: faceIdScanPhase === 'success' ? '#22c55e' : faceIdScanPhase === 'error' ? '#ef4444' : '#3b82f6' }}
                                 />
+
+                                {/* Blue Filling Progress Circle */}
+                                <svg className="absolute -inset-2 w-[calc(100%+1rem)] h-[calc(100%+1rem)] rotate-[-90deg] z-10 pointer-events-none">
+                                    <circle
+                                        cx="50%"
+                                        cy="50%"
+                                        r="48%"
+                                        fill="none"
+                                        stroke="#3b82f6"
+                                        strokeWidth="6"
+                                        strokeDasharray="100 100"
+                                        strokeDashoffset={100 - scanProgress}
+                                        pathLength="100"
+                                        strokeLinecap="round"
+                                        className="transition-all duration-300 ease-out opacity-80"
+                                    />
+                                </svg>
 
                                 {/* Video Container */}
                                 <div className="absolute inset-0 rounded-full overflow-hidden bg-black border-4 border-white/20 shadow-2xl">
