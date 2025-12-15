@@ -37,9 +37,9 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
 
                 // 1. Charger les modèles
                 await Promise.all([
-                    faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
-                    faceapi.nets.faceLandmark68.loadFromUri('/models'),
-                    faceapi.nets.faceRecognitionNet.loadFromUri('/models')
+                    faceapi.loadSsdMobilenetv1Model('/models'),
+                    faceapi.loadFaceLandmarkModel('/models'),
+                    faceapi.loadFaceRecognitionModel('/models')
                 ]);
 
                 // 2. Préparer les visages de référence (Admins)

@@ -270,9 +270,9 @@ const AdminPage = () => {
 
             // Load required models
             await Promise.all([
-                faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
-                faceapi.nets.faceLandmark68.loadFromUri('/models'),
-                faceapi.nets.faceRecognitionNet.loadFromUri('/models')
+                faceapi.loadSsdMobilenetv1Model('/models'),
+                faceapi.loadFaceLandmarkModel('/models'),
+                faceapi.loadFaceRecognitionModel('/models')
             ]);
 
             // Create an image element to detect face
