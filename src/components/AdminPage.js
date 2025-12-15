@@ -273,6 +273,12 @@ const AdminPage = () => {
         setTimeout(() => setStatus(null), 3000);
     };
 
+    const handleLogout = () => {
+        sessionStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('currentUser');
+        window.location.href = '/login';
+    };
+
     const verifyFaceId = async (imageData = null) => {
         const photoToVerify = imageData || newAdmin.photo;
 
@@ -383,11 +389,46 @@ const AdminPage = () => {
     };
 
     // Fix Black Screen: Bind stream to video element when modal appears
+    // Added retry logic to handle race condition where video element may not be mounted yet
     useEffect(() => {
-        if (showWebcam && videoRef.current && webcamStream) {
-            videoRef.current.srcObject = webcamStream;
-            videoRef.current.play().catch(err => console.error("Video play error:", err));
+        let retryCount = 0;
+        const maxRetries = 10;
+
+        const bindStream = () => {
+            if (videoRef.current && webcamStream) {
+                try {
+                    videoRef.current.srcObject = webcamStream;
+                    videoRef.current.onloadedmetadata = () => {
+                        videoRef.current.play().catch(err => {
+                            console.error("Video play error:", err);
+                            // Try again on play error
+                            if (retryCount < maxRetries) {
+                                retryCount++;
+                                setTimeout(bindStream, 100);
+                            }
+                        });
+                    };
+                } catch (err) {
+                    console.error("Error binding stream:", err);
+                }
+            } else if (showWebcam && retryCount < maxRetries) {
+                // Video element not ready yet, retry
+                retryCount++;
+                setTimeout(bindStream, 100);
+            }
+        };
+
+        if (showWebcam && webcamStream) {
+            // Small delay to ensure DOM is updated
+            setTimeout(bindStream, 50);
         }
+
+        return () => {
+            // Cleanup
+            if (videoRef.current) {
+                videoRef.current.onloadedmetadata = null;
+            }
+        };
     }, [showWebcam, webcamStream]);
 
     const stopWebcam = () => {
@@ -2147,15 +2188,7 @@ const AdminPage = () => {
                         </div>
                         <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
                             <video
-                                ref={(videoNode) => {
-                                    videoRef.current = videoNode;
-                                    if (videoNode && webcamStream) {
-                                        videoNode.srcObject = webcamStream;
-                                        videoNode.onloadedmetadata = () => {
-                                            videoNode.play().catch(e => console.error("Play error:", e));
-                                        };
-                                    }
-                                }}
+                                ref={videoRef}
                                 autoPlay
                                 playsInline
                                 muted
