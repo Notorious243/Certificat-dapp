@@ -251,12 +251,15 @@ const AdminPage = () => {
             lastName: admin.lastName,
             username: admin.username,
             password: admin.password,
-            photo: admin.photo || ''
+            photo: admin.photo || '',
+            faceIdData: admin.faceIdData || '',
+            faceIdConfigured: admin.faceIdConfigured || false
         });
         setShowPassword(false);
         // Scroll to form
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
+
 
     const handleCancelEdit = () => {
         setEditingAdmin(null);
@@ -1953,18 +1956,27 @@ const AdminPage = () => {
                                                         type="button"
                                                         variant="outline"
                                                         onClick={() => startWebcam('photo')}
-                                                        className="flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 font-semibold shadow-sm w-full md:w-48"
+                                                        className="flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 font-semibold shadow-sm w-full md:w-48 z-10 relative"
                                                     >
                                                         <Camera className="h-4 w-4" />
                                                         Prendre Photo
                                                     </Button>
+                                                </div>
+
+                                                {/* Button Isolated for Debugging */}
+                                                <div className="w-full md:w-auto z-20 relative">
                                                     <Button
                                                         type="button"
                                                         variant="outline"
-                                                        onClick={() => startWebcam('faceId')}
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            console.log("Button clicked!");
+                                                            startWebcam('faceId');
+                                                        }}
                                                         className={`flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 font-semibold shadow-sm w-full md:w-48 transition-all ${newAdmin.faceIdConfigured
-                                                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                                                            : 'hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700'
+                                                                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                                                                : 'bg-blue-600 text-white hover:bg-blue-700 border-blue-600'
                                                             }`}
                                                     >
                                                         <ScanFace className="h-4 w-4" />
