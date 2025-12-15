@@ -2144,13 +2144,19 @@ const AdminPage = () => {
                         </div>
                         <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
                             <video
-                                ref={videoRef}
+                                ref={(videoNode) => {
+                                    videoRef.current = videoNode;
+                                    if (videoNode && webcamStream) {
+                                        videoNode.srcObject = webcamStream;
+                                        videoNode.onloadedmetadata = () => {
+                                            videoNode.play().catch(e => console.error("Play error:", e));
+                                        };
+                                    }
+                                }}
                                 autoPlay
                                 playsInline
-                                className="w-full h-full object-cover"
-                                onLoadedMetadata={() => {
-                                    if (videoRef.current) videoRef.current.play();
-                                }}
+                                muted
+                                className="w-full h-full object-cover transform scale-x-[-1]"
                             />
                         </div>
                         <div className="flex justify-center">
