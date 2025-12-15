@@ -150,14 +150,25 @@ const AdminPage = () => {
     // Initialiser les admins depuis localStorage ou utiliser les défauts
     const [admins, setAdmins] = useState(() => {
         const savedAdmins = localStorage.getItem('registeredAdmins');
-        if (savedAdmins) {
-            return JSON.parse(savedAdmins);
-        }
-        return [
+        const defaultAdmins = [
             { id: '1', firstName: 'Michel', lastName: 'Maleka', username: 'Michel', password: 'Michel7', status: 'Active', photo: '/images/michel.png' },
             { id: '2', firstName: 'Fiston', lastName: 'Kalonda', username: 'Fiston', password: 'Fiston7', status: 'Active', photo: '/images/fiston.jpg' },
             { id: '3', firstName: 'Gilva', lastName: 'Kabongo', username: 'Gilva', password: 'Gilva7', status: 'Active', photo: '/images/gilva.jpg' }
         ];
+
+        if (savedAdmins) {
+            let parsed = JSON.parse(savedAdmins);
+            // Patch: Ensure default admins have their photos if missing (fix for stale localStorage)
+            parsed = parsed.map(admin => {
+                const def = defaultAdmins.find(d => d.username === admin.username);
+                if (def && !admin.photo) {
+                    return { ...admin, photo: def.photo };
+                }
+                return admin;
+            });
+            return parsed;
+        }
+        return defaultAdmins;
     });
     const [newAdmin, setNewAdmin] = useState({ firstName: '', lastName: '', username: '', password: '', photo: '' });
     const [editingAdmin, setEditingAdmin] = useState(null);
