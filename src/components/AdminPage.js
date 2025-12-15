@@ -146,12 +146,18 @@ const AdminPage = () => {
 
     const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'issue', 'admins'
 
-    // Mock Admin Management State
-    const [admins, setAdmins] = useState([
-        { id: '1', firstName: 'Michel', lastName: 'Maleka', username: 'Michel', password: 'Michel7', status: 'Active', photo: '/images/michel.png' },
-        { id: '2', firstName: 'Fiston', lastName: 'Kalonda', username: 'Fiston', password: 'Fiston7', status: 'Active', photo: '/images/fiston.jpg' },
-        { id: '3', firstName: 'Gilva', lastName: 'Kabongo', username: 'Gilva', password: 'Gilva7', status: 'Active', photo: '/images/gilva.jpg' }
-    ]);
+    // Initialiser les admins depuis localStorage ou utiliser les défauts
+    const [admins, setAdmins] = useState(() => {
+        const savedAdmins = localStorage.getItem('registeredAdmins');
+        if (savedAdmins) {
+            return JSON.parse(savedAdmins);
+        }
+        return [
+            { id: '1', firstName: 'Michel', lastName: 'Maleka', username: 'Michel', password: 'Michel7', status: 'Active', photo: '/images/michel.png' },
+            { id: '2', firstName: 'Fiston', lastName: 'Kalonda', username: 'Fiston', password: 'Fiston7', status: 'Active', photo: '/images/fiston.jpg' },
+            { id: '3', firstName: 'Gilva', lastName: 'Kabongo', username: 'Gilva', password: 'Gilva7', status: 'Active', photo: '/images/gilva.jpg' }
+        ];
+    });
     const [newAdmin, setNewAdmin] = useState({ firstName: '', lastName: '', username: '', password: '', photo: '' });
     const [editingAdmin, setEditingAdmin] = useState(null);
     const [showWebcam, setShowWebcam] = useState(false);
@@ -197,6 +203,7 @@ const AdminPage = () => {
                     : admin
             );
             setAdmins(updatedAdmins);
+            localStorage.setItem('registeredAdmins', JSON.stringify(updatedAdmins));
 
             // Synchronisation si l'admin modifié est l'utilisateur connecté
             if (currentUser && editingAdmin.username === currentUser.username) {
@@ -214,7 +221,9 @@ const AdminPage = () => {
                 ...newAdmin,
                 status: 'Active'
             };
-            setAdmins([...admins, newAdminData]);
+            const updatedAdmins = [...admins, newAdminData];
+            setAdmins(updatedAdmins);
+            localStorage.setItem('registeredAdmins', JSON.stringify(updatedAdmins));
             setStatus({ type: 'success', message: 'Nouvel administrateur ajouté avec succès.' });
         }
         setNewAdmin({ firstName: '', lastName: '', username: '', password: '', photo: '' });
@@ -1728,24 +1737,24 @@ const AdminPage = () => {
                                                             )}
                                                         </Button>
                                                     </div>
-                                                </form>
 
-                                                {/* Message de statut */}
-                                                {status && (
-                                                    <motion.div
-                                                        initial={{ opacity: 0, y: 5 }}
-                                                        animate={{ opacity: 1, y: 0 }}
-                                                        className={`mt-4 p-3 rounded-lg flex items-center gap-3 ${status.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                                            status.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
-                                                                'bg-blue-50 text-blue-700 border border-blue-200'
-                                                            }`}
-                                                    >
-                                                        {status.type === 'success' ? <CheckCircle className="h-4 w-4 flex-shrink-0" /> :
-                                                            status.type === 'error' ? <AlertTriangle className="h-4 w-4 flex-shrink-0" /> :
-                                                                <RefreshCw className="h-4 w-4 animate-spin flex-shrink-0" />}
-                                                        <p className="font-medium text-xs">{status.message}</p>
-                                                    </motion.div>
-                                                )}
+                                                    {/* Message de statut */}
+                                                    {status && (
+                                                        <motion.div
+                                                            initial={{ opacity: 0, y: 5 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            className={`mt-4 p-3 rounded-lg flex items-center gap-3 ${status.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                                                status.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
+                                                                    'bg-blue-50 text-blue-700 border border-blue-200'
+                                                                }`}
+                                                        >
+                                                            {status.type === 'success' ? <CheckCircle className="h-4 w-4 flex-shrink-0" /> :
+                                                                status.type === 'error' ? <AlertTriangle className="h-4 w-4 flex-shrink-0" /> :
+                                                                    <RefreshCw className="h-4 w-4 animate-spin flex-shrink-0" />}
+                                                            <p className="font-medium text-xs">{status.message}</p>
+                                                        </motion.div>
+                                                    )}
+                                                </form>
                                             </CardContent>
                                         </Card>
                                     </div>
@@ -1812,7 +1821,7 @@ const AdminPage = () => {
                                                 </div>
                                             </div>
                                             {editingAdmin && (
-                                                <Button variant="outline" onClick={handleCancelEdit}>
+                                                <Button type="button" variant="outline" onClick={handleCancelEdit}>
                                                     Annuler
                                                 </Button>
                                             )}
@@ -1864,7 +1873,7 @@ const AdminPage = () => {
                                                         className="flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 font-semibold shadow-sm w-full md:w-48"
                                                     >
                                                         <Camera className="h-4 w-4" />
-                                                        Utiliser Webcam
+                                                        Configurer Face ID
                                                     </Button>
                                                 </div>
                                             </div>
@@ -1875,7 +1884,7 @@ const AdminPage = () => {
                                                     <div className="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4">
                                                         <div className="flex justify-between items-center">
                                                             <h3 className="font-bold text-lg">Prendre une photo</h3>
-                                                            <Button variant="ghost" size="icon" onClick={stopWebcam}>
+                                                            <Button type="button" variant="ghost" size="icon" onClick={stopWebcam}>
                                                                 <X className="h-5 w-5" />
                                                             </Button>
                                                         </div>
@@ -1891,7 +1900,7 @@ const AdminPage = () => {
                                                             />
                                                         </div>
                                                         <div className="flex justify-center">
-                                                            <Button onClick={capturePhoto} className="bg-[#1e3a8a] text-white gap-2">
+                                                            <Button type="button" onClick={capturePhoto} className="bg-[#1e3a8a] text-white gap-2">
                                                                 <Camera className="h-4 w-4" />
                                                                 Capturer
                                                             </Button>
