@@ -11,10 +11,11 @@ import { ShootingStars } from './ui/shooting-stars';
 import FaceLogin from './FaceLogin';
 
 // Admin accounts
-const ADMIN_ACCOUNTS = [
-    { username: 'Michel', password: 'Michel7', firstName: 'Michel', lastName: 'Maleka', photo: '/images/michel.png' },
-    { username: 'Gilva', password: 'Gilva7', firstName: 'Gilva', lastName: 'Kabongo', photo: '/images/gilva.jpg' },
-    { username: 'Fiston', password: 'Fiston7', firstName: 'Fiston', lastName: 'Kalonda', photo: '/images/fiston.jpg' }
+// Admin accounts (Fallback defaults)
+const DEFAULT_ADMINS = [
+    { id: '1', username: 'Michel', password: 'Michel7', firstName: 'Michel', lastName: 'Maleka', photo: '/images/michel.png', status: 'Active' },
+    { id: '2', username: 'Gilva', password: 'Gilva7', firstName: 'Gilva', lastName: 'Kabongo', photo: '/images/gilva.jpg', status: 'Active' },
+    { id: '3', username: 'Fiston', password: 'Fiston7', firstName: 'Fiston', lastName: 'Kalonda', photo: '/images/fiston.jpg', status: 'Active' }
 ];
 
 const LoginPage = () => {
@@ -24,10 +25,22 @@ const LoginPage = () => {
     const [error, setError] = useState('');
     const [showFaceLogin, setShowFaceLogin] = useState(false);
 
+    // Load admins from localStorage to ensure we have the latest data (including changes made in AdminPage)
+    // If no data exists, we use the defaults.
+    const [admins] = useState(() => {
+        const savedAdmins = localStorage.getItem('registeredAdmins');
+        if (savedAdmins) {
+            return JSON.parse(savedAdmins);
+        }
+        // If not in storage, use defaults and save them (to seed the app)
+        localStorage.setItem('registeredAdmins', JSON.stringify(DEFAULT_ADMINS));
+        return DEFAULT_ADMINS;
+    });
+
     const handleFaceLoginSuccess = (account) => {
         setShowFaceLogin(false);
         setIsLoading(true);
-        // Simuler un petit délai de connexion
+        // Simulate a small connection delay
         setTimeout(() => {
             sessionStorage.setItem('isLoggedIn', 'true');
             sessionStorage.setItem('currentUser', JSON.stringify(account));
@@ -40,9 +53,9 @@ const LoginPage = () => {
         setIsLoading(true);
         setError('');
 
-        // Validate credentials against admin accounts
+        // Validate credentials against the LOADED admins (from localStorage)
         setTimeout(() => {
-            const validAccount = ADMIN_ACCOUNTS.find(
+            const validAccount = admins.find(
                 acc => acc.username === credentials.username && acc.password === credentials.password
             );
 
@@ -188,10 +201,9 @@ const LoginPage = () => {
                 isOpen={showFaceLogin}
                 onClose={() => setShowFaceLogin(false)}
                 onLogin={handleFaceLoginSuccess}
-                adminAccounts={ADMIN_ACCOUNTS}
+                adminAccounts={admins}
             />
         </div >
     );
 };
-
 export default LoginPage;

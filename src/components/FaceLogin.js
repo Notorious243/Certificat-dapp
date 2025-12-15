@@ -1,32 +1,41 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as faceapi from 'face-api.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Camera, ShieldCheck, AlertTriangle, Loader2 } from 'lucide-react';
+import { X, Lock, Unlock, ScanFace, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
 
 const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
     const videoRef = useRef(null);
-    const canvasRef = useRef(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [loadingStep, setLoadingStep] = useState('Chargement des modèles IA...');
+    const [loadingState, setLoadingState] = useState('initial'); // initial, loading, ready, scanning, success, error
     const [error, setError] = useState(null);
-    const [isScanning, setIsScanning] = useState(false);
     const [matchFound, setMatchFound] = useState(null);
+    const [scanProgress, setScanProgress] = useState(0);
 
     // Initialisation
     useEffect(() => {
         let isMounted = true;
+        let detectionInterval = null;
+
+        const cleanup = () => {
+            if (detectionInterval) clearInterval(detectionInterval);
+            if (videoRef.current && videoRef.current.srcObject) {
+                videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
+            }
+        };
 
         const loadModelsAndStart = async () => {
             if (!isOpen) return;
 
             try {
                 setIsLoading(true);
+                setLoadingState('loading');
                 setError(null);
                 setMatchFound(null);
+                setScanProgress(0);
 
                 // 1. Charger les modèles
-                setLoadingStep('Chargement du cerveau IA...');
                 await Promise.all([
                     faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
                     faceapi.nets.faceLandmark68.loadFromUri('/models'),
@@ -34,13 +43,11 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 ]);
 
                 // 2. Préparer les visages de référence (Admins)
-                setLoadingStep('Analyse des dossiers Admin...');
                 const labeledDescriptors = await loadLabeledImages();
                 const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
 
                 // 3. Démarrer la webcam
-                setLoadingStep('Activation des capteurs visuels...');
-                const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
 
                 if (videoRef.current && isMounted) {
                     videoRef.current.srcObject = stream;
@@ -49,14 +56,18 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     videoRef.current.onloadedmetadata = () => {
                         videoRef.current.play();
                         setIsLoading(false);
-                        setIsScanning(true);
-                        startDetection(faceMatcher);
+                        setLoadingState('scanning');
+                        // Start detection loop
+                        detectionInterval = startDetection(faceMatcher);
                     };
                 }
 
             } catch (err) {
                 console.error("FaceLogin Error:", err);
-                if (isMounted) setError("Impossible d'initialiser le Face ID. Vérifiez que la caméra est accessible.");
+                if (isMounted) {
+                    setError("Impossible d'accéder à la caméra ou de charger l'IA.");
+                    setLoadingState('error');
+                }
                 setIsLoading(false);
             }
         };
@@ -67,37 +78,25 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
 
         return () => {
             isMounted = false;
-            stopVideo();
+            cleanup();
         };
-    }, [isOpen]);
-
-    const stopVideo = () => {
-        if (videoRef.current && videoRef.current.srcObject) {
-            videoRef.current.srcObject.getTracks().forEach(track => track.stop());
-            videoRef.current.srcObject = null;
-        }
-        setIsScanning(false);
-    };
+    }, [isOpen, adminAccounts]);
 
     const loadLabeledImages = async () => {
         return Promise.all(
             adminAccounts.map(async (admin) => {
                 try {
-                    // Charger l'image de profil de l'admin
+                    // Si photo locale (blob/base64) ou url
                     const img = await faceapi.fetchImage(admin.photo);
-                    // Détecter le visage
                     const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
 
                     if (!detections) {
                         throw new Error(`Pas de visage trouvé pour ${admin.firstName}`);
                     }
-
                     return new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]);
                 } catch (err) {
                     console.warn(`Skip admin ${admin.firstName}:`, err);
-                    // Retourner un descripteur vide ou factice pour ne pas bloquer
-                    // Dans un cas réel, on filtrerait, mais ici on veut éviter que Promise.all fail.
-                    // On retourne un "unknown" qui ne matchera jamais
+                    // Retourner un descripteur "impossible" pour ne pas faire échouer Promise.all
                     return new faceapi.LabeledFaceDescriptors(`error_${admin.username}`, [new Float32Array(128)]);
                 }
             })
@@ -105,56 +104,44 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
     };
 
     const startDetection = (faceMatcher) => {
-        const interval = setInterval(async () => {
-            if (!videoRef.current || !canvasRef.current || !isOpen) {
-                clearInterval(interval);
-                return;
-            }
+        return setInterval(async () => {
+            if (!videoRef.current || !isOpen) return;
 
-            // Détection sur la vidéo
+            // Détection visage
             const detections = await faceapi.detectAllFaces(videoRef.current)
                 .withFaceLandmarks()
                 .withFaceDescriptors();
 
-            // Redimensionner le canvas
-            const displaySize = { width: videoRef.current.videoWidth, height: videoRef.current.videoHeight };
-            faceapi.matchDimensions(canvasRef.current, displaySize);
+            if (detections.length > 0) {
+                // S'il y a un visage, on augmente "la confiance" visuelle (progress bar)
+                setScanProgress(prev => Math.min(prev + 5, 100));
 
-            // Redimensionner les détections
-            const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                const results = detections.map(d => faceMatcher.findBestMatch(d.descriptor));
 
-            // Nettoyer le canvas
-            const ctx = canvasRef.current.getContext('2d');
-            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+                // On cherche un match valide
+                const match = results.find(result =>
+                    result.label !== 'unknown' && !result.label.startsWith('error_')
+                );
 
-            // Matcher les visages
-            const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
-
-            results.forEach((result, i) => {
-                const box = resizedDetections[i].detection.box;
-                const drawBox = new faceapi.draw.DrawBox(box, {
-                    label: result.toString(),
-                    boxColor: result.label !== 'unknown' && !result.label.startsWith('error') ? '#00ff00' : '#ff0000'
-                });
-                drawBox.draw(canvasRef.current);
-
-                // Si on trouve un match valide
-                if (result.label !== 'unknown' && !result.label.startsWith('error') && !matchFound) {
-                    setMatchFound(result.label);
-                    clearInterval(interval);
-                    stopVideo();
+                if (match) {
+                    // MATCH TROUVÉ !
+                    setMatchFound(match.label);
+                    setLoadingState('success');
+                    setScanProgress(100);
 
                     // Trouver l'objet admin complet
-                    const admin = adminAccounts.find(a => a.username === result.label);
+                    const admin = adminAccounts.find(a => a.username === match.label);
 
-                    // Petit délai pour l'effet "Succès"
+                    // Delay pour l'animation de succès
                     setTimeout(() => {
                         onLogin(admin);
-                    }, 1500);
+                    }, 1200);
                 }
-            });
-
-        }, 500); // Check toutes les 500ms
+            } else {
+                // Pas de visage, on baisse la progress
+                setScanProgress(prev => Math.max(prev - 2, 0));
+            }
+        }, 200);
     };
 
     if (!isOpen) return null;
@@ -165,87 +152,119 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md"
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl p-4"
             >
-                <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl mx-4">
-                    {/* Header */}
-                    <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/50">
-                        <div className="flex items-center gap-2 text-white">
-                            <ShieldCheck className="h-5 w-5 text-blue-500" />
-                            <span className="font-bold">GouvChain Face ID</span>
-                        </div>
-                        <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-                            <X className="h-6 w-6" />
-                        </button>
+                <div className="relative w-full max-w-sm mx-auto flex flex-col items-center">
+
+                    {/* Header Text */}
+                    <div className="mb-8 text-center space-y-2">
+                        <motion.div
+                            initial={{ y: -20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            className="inline-flex items-center justify-center p-3 bg-white/10 rounded-full mb-4 backdrop-blur-md"
+                        >
+                            {loadingState === 'success' ? (
+                                <Unlock className="w-8 h-8 text-green-400" />
+                            ) : (
+                                <Lock className="w-8 h-8 text-white" />
+                            )}
+                        </motion.div>
+                        <h2 className="text-2xl font-semibold text-white tracking-tight">
+                            {loadingState === 'success' ? 'Identité confirmée' : 'Face ID'}
+                        </h2>
+                        <p className="text-sm text-white/60">
+                            {loadingState === 'loading' && 'Initialisation...'}
+                            {loadingState === 'scanning' && 'Positionnez votre visage'}
+                            {loadingState === 'success' && `Bienvenue, ${matchFound}`}
+                            {loadingState === 'error' && 'Authentification échouée'}
+                        </p>
                     </div>
 
-                    {/* Video Area */}
-                    <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
-                        {/* Status Overlay */}
-                        {isLoading && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-blue-400 space-y-4 z-20 bg-slate-900/80">
-                                <Loader2 className="h-10 w-10 animate-spin" />
-                                <p className="text-sm font-mono animate-pulse">{loadingStep}</p>
-                            </div>
+                    {/* Main Scanner UI (Apple Style) */}
+                    <div className="relative w-64 h-64">
+                        {/* Container Shape */}
+                        <div className="absolute inset-0 rounded-[2.5rem] overflow-hidden bg-black border-[3px] border-white/20 shadow-2xl">
+                            <video
+                                ref={videoRef}
+                                muted
+                                playsInline
+                                className={`w-full h-full object-cover transform scale-125 transition-all duration-700 ${loadingState === 'success' ? 'blur-md scale-100 opacity-50' : ''
+                                    }`}
+                            />
+
+                            {/* Scanning Animation */}
+                            {loadingState === 'scanning' && (
+                                <div className="absolute inset-0">
+                                    <motion.div
+                                        animate={{
+                                            background: [
+                                                "linear-gradient(to bottom, transparent 0%, rgba(59,130,246,0.2) 50%, transparent 100%)",
+                                                "linear-gradient(to bottom, transparent 0%, rgba(59,130,246,0.5) 50%, transparent 100%)"
+                                            ],
+                                            top: ["-100%", "100%"]
+                                        }}
+                                        transition={{
+                                            duration: 2,
+                                            repeat: Infinity,
+                                            ease: "easeInOut"
+                                        }}
+                                        className="absolute w-full h-1/2 left-0"
+                                    />
+                                    {/* Face Tracking Indicator (Subtle frame) */}
+                                    <div className="absolute inset-8 border-2 border-white/20 rounded-2xl opacity-50"></div>
+                                </div>
+                            )}
+
+                            {/* Success Overlay */}
+                            <AnimatePresence>
+                                {loadingState === 'success' && (
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.8 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="absolute inset-0 flex items-center justify-center bg-black/40"
+                                    >
+                                        <div className="bg-green-500 rounded-full p-4 shadow-lg shadow-green-500/20">
+                                            <CheckCircle2 className="w-12 h-12 text-white" />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* Error Overlay */}
+                            {loadingState === 'error' && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                                    <div className="text-center p-4">
+                                        <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-2" />
+                                        <p className="text-white text-xs font-medium">{error}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Orbiting Loading Ring (around the video) */}
+                        {loadingState === 'loading' && (
+                            <div className="absolute -inset-4 border-4 border-white/10 rounded-[3rem] border-t-blue-500 animate-spin"></div>
                         )}
 
-                        {error && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-red-500 p-6 text-center z-20 bg-slate-900/90">
-                                <AlertTriangle className="h-12 w-12 mb-2" />
-                                <p>{error}</p>
-                                <Button variant="outline" className="mt-4" onClick={onClose}>Fermer</Button>
-                            </div>
-                        )}
-
-                        {/* Success Overlay */}
-                        {matchFound && (
+                        {/* Success Ring Pulse */}
+                        {loadingState === 'success' && (
                             <motion.div
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className="absolute inset-0 flex flex-col items-center justify-center bg-green-500/20 backdrop-blur-sm z-30"
-                            >
-                                <div className="h-20 w-20 bg-green-500 rounded-full flex items-center justify-center mb-4 shadow-lg shadow-green-500/50">
-                                    <ShieldCheck className="h-10 w-10 text-white" />
-                                </div>
-                                <h3 className="text-2xl font-bold text-white mb-1">Identité Confirmée</h3>
-                                <p className="text-green-300">Bienvenue, {matchFound}</p>
-                            </motion.div>
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1.1 }}
+                                className="absolute -inset-1 border-2 border-green-500 rounded-[2.6rem]"
+                            />
                         )}
+                    </div>
 
-                        {/* Video Element */}
-                        <video
-                            ref={videoRef}
-                            muted
-                            playsInline
-                            className={`w-full h-full object-cover ${matchFound ? 'blur-sm' : ''}`}
-                        />
-
-                        {/* Canvas for Drawing Boxes */}
-                        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-
-                        {/* Scanner Animation UI */}
-                        {!isLoading && !matchFound && !error && (
-                            <div className="absolute inset-0 pointer-events-none">
-                                {/* Corners */}
-                                <div className="absolute top-8 left-8 w-16 h-16 border-t-4 border-l-4 border-blue-500/50 rounded-tl-xl" />
-                                <div className="absolute top-8 right-8 w-16 h-16 border-t-4 border-r-4 border-blue-500/50 rounded-tr-xl" />
-                                <div className="absolute bottom-8 left-8 w-16 h-16 border-b-4 border-l-4 border-blue-500/50 rounded-bl-xl" />
-                                <div className="absolute bottom-8 right-8 w-16 h-16 border-b-4 border-r-4 border-blue-500/50 rounded-br-xl" />
-
-                                {/* Scanning Bar */}
-                                <motion.div
-                                    animate={{ top: ['10%', '90%', '10%'] }}
-                                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                                    className="absolute left-0 w-full h-0.5 bg-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.8)]"
-                                />
-
-                                <div className="absolute bottom-4 left-0 right-0 text-center">
-                                    <p className="inline-block bg-black/50 backdrop-blur px-3 py-1 rounded-full text-xs text-blue-200 font-mono">
-                                        RECHERCHE BIOMÉTRIQUE EN COURS...
-                                    </p>
-                                </div>
-                            </div>
-                        )}
+                    {/* Footer Actions */}
+                    <div className="mt-12">
+                        <Button
+                            variant="ghost"
+                            className="text-white/50 hover:text-white hover:bg-white/10 rounded-full px-8"
+                            onClick={onClose}
+                        >
+                            Annuler
+                        </Button>
                     </div>
                 </div>
             </motion.div>
