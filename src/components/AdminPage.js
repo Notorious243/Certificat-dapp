@@ -379,6 +379,14 @@ const AdminPage = () => {
         }
     };
 
+    // Fix Black Screen: Bind stream to video element when modal appears
+    useEffect(() => {
+        if (showWebcam && videoRef.current && webcamStream) {
+            videoRef.current.srcObject = webcamStream;
+            videoRef.current.play().catch(err => console.error("Video play error:", err));
+        }
+    }, [showWebcam, webcamStream]);
+
     const stopWebcam = () => {
         if (webcamStream) {
             webcamStream.getTracks().forEach(track => track.stop());
