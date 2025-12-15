@@ -35,26 +35,39 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 setMatchFound(null);
                 setScanProgress(0);
 
-                // 1. Charger les modèles
+                // 1. Charger les modèles (Standardisé avec AdminPage)
                 await Promise.all([
-                    faceapi.loadSsdMobilenetv1Model('/models'),
-                    faceapi.loadFaceLandmarkModel('/models'),
-                    faceapi.loadFaceRecognitionModel('/models')
+                    faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
+                    faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+                    faceapi.nets.faceRecognitionNet.loadFromUri('/models')
                 ]);
 
                 // 2. Préparer les visages de référence (Admins)
                 const labeledDescriptors = await loadLabeledImages();
+
+                if (labeledDescriptors.length === 0) {
+                    throw new Error("Aucun administrateur n'a configuré Face ID.");
+                }
+
                 const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
 
-                // 3. Démarrer la webcam
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                // 3. Démarrer la webcam (Optimisé pour Mobile)
+                const constraints = {
+                    video: {
+                        facingMode: 'user', // Essentiel pour mobile (caméra frontale)
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
                 if (videoRef.current && isMounted) {
                     videoRef.current.srcObject = stream;
 
                     // Attendre que la vidéo joue pour démarrer la détection
                     videoRef.current.onloadedmetadata = () => {
-                        videoRef.current.play();
+                        videoRef.current.play().catch(e => console.error("Play error:", e));
                         setIsLoading(false);
                         setLoadingState('scanning');
                         // Start detection loop
@@ -69,8 +82,10 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                         setError("Accès caméra refusé. Vérifiez vos permissions.");
                     } else if (err.message && err.message.includes('createInstance')) {
                         setError("Erreur chargement IA. Rafraîchissez la page.");
+                    } else if (err.message && err.message.includes('Aucun administrateur')) {
+                        setError(err.message);
                     } else {
-                        setError("Erreur technique: " + (err.message || "Inconnue"));
+                        setError("Impossible d'accéder à la caméra ou erreur IA.");
                     }
                     setLoadingState('error');
                 }
@@ -90,12 +105,17 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
 
     const loadLabeledImages = async () => {
         const labeledDescriptors = [];
-        for (const admin of adminAccounts) {
+        // Filtrer uniquement les admins actifs avec Face ID configuré
+        const activeAdmins = adminAccounts.filter(a => a.status === 'Active' && a.faceIdConfigured && a.faceIdData);
+
+        console.log(`Loading ${activeAdmins.length} active Face ID profiles...`);
+
+        for (const admin of activeAdmins) {
             try {
-                if (admin.faceIdConfigured && (admin.faceIdData || admin.photo)) {
+                if (admin.faceIdData) {
                     const img = new Image();
-                    img.crossOrigin = "anonymous"; // Avoid CORS issues
-                    img.src = admin.faceIdData || admin.photo;
+                    img.crossOrigin = "anonymous";
+                    img.src = admin.faceIdData;
 
                     await new Promise((resolve, reject) => {
                         img.onload = resolve;
@@ -103,24 +123,24 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     });
 
                     // Skip if dimensions are invalid
-                    if (img.width === 0 || img.height === 0) {
-                        console.warn(`Skipping invalid image for ${admin.username}: dimensions 0x0`);
-                        continue;
-                    }
+                    if (img.width === 0 || img.height === 0) continue;
 
                     try {
-                        const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+                        // Use explicit detection options for consistency
+                        const detections = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+                            .withFaceLandmarks()
+                            .withFaceDescriptor();
+
                         if (detections) {
                             labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]));
                         }
                     } catch (tensorError) {
                         console.error(`Tensor error for ${admin.username}:`, tensorError);
-                        // Continue to next admin, do not crash
                         continue;
                     }
                 }
             } catch (err) {
-                console.warn(`Skip admin ${admin.firstName} (Image load error):`, err);
+                console.warn(`Skip admin ${admin.firstName}:`, err);
             }
         }
         return labeledDescriptors;
@@ -130,39 +150,51 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
         return setInterval(async () => {
             if (!videoRef.current || !isOpen) return;
 
-            // Détection visage
-            const detections = await faceapi.detectAllFaces(videoRef.current)
-                .withFaceLandmarks()
-                .withFaceDescriptors();
+            // Safety check for video readiness
+            if (videoRef.current.readyState !== 4) return;
 
-            if (detections.length > 0) {
-                // S'il y a un visage, on augmente "la confiance" visuelle (progress bar)
-                setScanProgress(prev => Math.min(prev + 5, 100));
+            try {
+                // Détection visage (SingleFace is faster for mobile login scenarios usually, but detectAll works too)
+                // Use detectSingleFace for performance on mobile if we assume one user login
+                // But detectAllFaces is safer if multiple people look. Let's stick to detectAll but optimize.
+                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
 
-                const results = detections.map(d => faceMatcher.findBestMatch(d.descriptor));
+                const detections = await faceapi.detectAllFaces(videoRef.current, options)
+                    .withFaceLandmarks()
+                    .withFaceDescriptors();
 
-                // On cherche un match valide
-                const match = results.find(result =>
-                    result.label !== 'unknown' && !result.label.startsWith('error_')
-                );
+                if (detections.length > 0) {
+                    // S'il y a un visage, on augmente "la confiance" visuelle (progress bar)
+                    setScanProgress(prev => Math.min(prev + 5, 100));
 
-                if (match) {
-                    // MATCH TROUVÉ !
-                    setMatchFound(match.label);
-                    setLoadingState('success');
-                    setScanProgress(100);
+                    const results = detections.map(d => faceMatcher.findBestMatch(d.descriptor));
 
-                    // Trouver l'objet admin complet
-                    const admin = adminAccounts.find(a => a.username === match.label);
+                    // On cherche un match valide
+                    const match = results.find(result =>
+                        result.label !== 'unknown' && !result.label.startsWith('error_')
+                    );
 
-                    // Delay pour l'animation de succès
-                    setTimeout(() => {
-                        onLogin(admin);
-                    }, 1200);
+                    if (match) {
+                        // MATCH TROUVÉ !
+                        setMatchFound(match.label);
+                        setLoadingState('success');
+                        setScanProgress(100);
+
+                        // Trouver l'objet admin complet
+                        const admin = adminAccounts.find(a => a.username === match.label);
+
+                        // Delay pour l'animation de succès
+                        setTimeout(() => {
+                            onLogin(admin);
+                        }, 1200);
+                    }
+                } else {
+                    // Pas de visage, on baisse la progress
+                    setScanProgress(prev => Math.max(prev - 2, 0));
                 }
-            } else {
-                // Pas de visage, on baisse la progress
-                setScanProgress(prev => Math.max(prev - 2, 0));
+            } catch (err) {
+                // Ignore transient errors in loop
+                // console.warn(err); 
             }
         }, 200);
     };
