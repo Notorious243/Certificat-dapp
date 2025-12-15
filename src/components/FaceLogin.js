@@ -89,24 +89,25 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
     }, [isOpen, adminAccounts]);
 
     const loadLabeledImages = async () => {
-        return Promise.all(
-            adminAccounts.map(async (admin) => {
-                try {
-                    // Si photo locale (blob/base64) ou url
-                    const img = await faceapi.fetchImage(admin.photo);
+        const labeledDescriptors = [];
+        for (const admin of adminAccounts) {
+            try {
+                if (admin.faceIdConfigured && (admin.faceIdData || admin.photo)) {
+                    const img = new Image();
+                    img.src = admin.faceIdData || admin.photo;
+                    await new Promise(resolve => img.onload = resolve);
+
                     const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
 
-                    if (!detections) {
-                        throw new Error(`Pas de visage trouvé pour ${admin.firstName}`);
+                    if (detections) {
+                        labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]));
                     }
-                    return new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]);
-                } catch (err) {
-                    console.warn(`Skip admin ${admin.firstName}:`, err);
-                    // Retourner un descripteur "impossible" pour ne pas faire échouer Promise.all
-                    return new faceapi.LabeledFaceDescriptors(`error_${admin.username}`, [new Float32Array(128)]);
                 }
-            })
-        );
+            } catch (err) {
+                console.warn(`Skip admin ${admin.firstName}:`, err);
+            }
+        }
+        return labeledDescriptors;
     };
 
     const startDetection = (faceMatcher) => {

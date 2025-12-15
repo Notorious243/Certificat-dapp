@@ -170,10 +170,11 @@ const AdminPage = () => {
         }
         return defaultAdmins;
     });
-    const [newAdmin, setNewAdmin] = useState({ firstName: '', lastName: '', username: '', password: '', photo: '' });
+    const [newAdmin, setNewAdmin] = useState({ firstName: '', lastName: '', username: '', password: '', photo: '', faceIdData: '' });
     const [editingAdmin, setEditingAdmin] = useState(null);
     const [showWebcam, setShowWebcam] = useState(false);
     const [webcamStream, setWebcamStream] = useState(null);
+    const [webcamMode, setWebcamMode] = useState('photo'); // 'photo' or 'faceId'
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
 
@@ -269,11 +270,13 @@ const AdminPage = () => {
         setTimeout(() => setStatus(null), 3000);
     };
 
-    // Verify Face ID capability for the current photo
-    const verifyFaceId = async () => {
-        if (!newAdmin.photo) {
-            setStatus({ type: 'error', message: "Veuillez d'abord ajouter une photo." });
-            return;
+    // Verify Face ID capability (accepts explicit image data now)
+    const verifyFaceId = async (imageData = null) => {
+        const photoToVerify = imageData || newAdmin.photo;
+
+        if (!photoToVerify) {
+            setStatus({ type: 'error', message: "Veuillez d'abord prendre une photo." });
+            return false;
         }
 
         try {
@@ -288,28 +291,44 @@ const AdminPage = () => {
 
             // Create an image element to detect face
             const img = new Image();
-            img.src = newAdmin.photo;
+            img.src = photoToVerify;
             await new Promise(resolve => img.onload = resolve);
 
             // Detect face
             const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
 
             if (detections) {
-                setNewAdmin(prev => ({ ...prev, faceIdConfigured: true }));
+                setNewAdmin(prev => ({ ...prev, faceIdConfigured: true, faceIdData: photoToVerify }));
                 setStatus({ type: 'success', message: "Face ID configuré avec succès ! Visage détecté." });
+                return true;
             } else {
-                setNewAdmin(prev => ({ ...prev, faceIdConfigured: false }));
-                setStatus({ type: 'error', message: "Aucun visage détecté. Veuillez utiliser une photo plus claire." });
+                setNewAdmin(prev => ({ ...prev, faceIdConfigured: false, faceIdData: '' }));
+                setStatus({ type: 'error', message: "Aucun visage détecté. Essayez de mieux vous cadrer." });
+                return false;
             }
         } catch (error) {
             console.error("Erreur Face ID:", error);
             setStatus({ type: 'error', message: "Erreur lors de la configuration Face ID." });
+            return false;
+        } finally {
+            setTimeout(() => setStatus(null), 3000);
         }
-        setTimeout(() => setStatus(null), 3000);
+    };
+
+    const startWebcam = async (mode = 'photo') => {
+        setWebcamMode(mode);
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            setWebcamStream(stream);
+            setShowWebcam(true);
+        } catch (err) {
+            console.error("Error accessing webcam:", err);
+            alert("Impossible d'accéder à la caméra. Vérifiez les permissions.");
+        }
     };
 
     // Corrected Capture Photo function
-    const capturePhoto = () => {
+    const capturePhoto = async () => {
         if (videoRef.current && canvasRef.current) {
             const video = videoRef.current;
             const canvas = canvasRef.current;
@@ -330,25 +349,18 @@ const AdminPage = () => {
             // Get data URL
             const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
 
-            setNewAdmin(prev => ({ ...prev, photo: dataUrl, faceIdConfigured: false })); // Reset Face ID config on new photo
-            stopWebcam();
-        }
-    };
-
-    const handleLogout = () => {
-        sessionStorage.removeItem('isLoggedIn');
-        sessionStorage.removeItem('currentUser');
-        window.location.href = '/login';
-    };
-
-    const startWebcam = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            setWebcamStream(stream);
-            setShowWebcam(true);
-        } catch (err) {
-            console.error("Error accessing webcam:", err);
-            alert("Impossible d'accéder à la caméra. Vérifiez les permissions.");
+            if (webcamMode === 'photo') {
+                // Capture profile photo
+                setNewAdmin(prev => ({ ...prev, photo: dataUrl, faceIdConfigured: false })); // Reset Face ID config on new photo
+                stopWebcam();
+            } else {
+                // Capture Face ID data (verify first)
+                const success = await verifyFaceId(dataUrl);
+                if (success) {
+                    setNewAdmin(prev => ({ ...prev, photo: dataUrl })); // Save photo if Face ID is configured
+                    stopWebcam();
+                }
+            }
         }
     };
 
@@ -1936,7 +1948,7 @@ const AdminPage = () => {
                                                     <Button
                                                         type="button"
                                                         variant="outline"
-                                                        onClick={startWebcam}
+                                                        onClick={() => startWebcam('photo')}
                                                         className="flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 font-semibold shadow-sm w-full md:w-48"
                                                     >
                                                         <Camera className="h-4 w-4" />
@@ -1945,8 +1957,7 @@ const AdminPage = () => {
                                                     <Button
                                                         type="button"
                                                         variant="outline"
-                                                        onClick={verifyFaceId}
-                                                        disabled={!newAdmin.photo}
+                                                        onClick={() => startWebcam('faceId')}
                                                         className={`flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 font-semibold shadow-sm w-full md:w-48 transition-all ${newAdmin.faceIdConfigured
                                                             ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
                                                             : 'hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700'
