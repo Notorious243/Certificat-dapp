@@ -273,7 +273,6 @@ const AdminPage = () => {
         setTimeout(() => setStatus(null), 3000);
     };
 
-    // Verify Face ID capability (accepts explicit image data now)
     const verifyFaceId = async (imageData = null) => {
         const photoToVerify = imageData || newAdmin.photo;
 
@@ -283,25 +282,24 @@ const AdminPage = () => {
         }
 
         try {
-            setStatus({ type: 'loading', message: "Chargement de l'intelligence artificielle..." });
+            setStatus({ type: 'loading', message: "Chargement des modèles IA (1/2)..." });
 
-            // Check if models are already loaded to speed up
-            if (!faceapi.nets.ssdMobilenetv1.params) {
-                await faceapi.loadSsdMobilenetv1Model('/models');
-            }
-            if (!faceapi.nets.faceLandmark68Net.params) {
-                await faceapi.loadFaceLandmarkModel('/models');
-            }
-            if (!faceapi.nets.faceRecognitionNet.params) {
-                await faceapi.loadFaceRecognitionModel('/models');
-            }
+            // Robust loading: Just load them. Library handles caching.
+            await Promise.all([
+                faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
+                faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+                faceapi.nets.faceRecognitionNet.loadFromUri('/models')
+            ]);
 
-            setStatus({ type: 'loading', message: "Analyse biométrique en cours..." });
+            setStatus({ type: 'loading', message: "Analyse du visage en cours (2/2)..." });
 
             // Create an image element to detect face
             const img = new Image();
             img.src = photoToVerify;
-            await new Promise(resolve => img.onload = resolve);
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+            });
 
             // Detect face with slightly lower confidence threshold for better UX
             const detections = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
@@ -309,20 +307,23 @@ const AdminPage = () => {
                 .withFaceDescriptor();
 
             if (detections) {
+                console.log("Face detected:", detections);
                 setNewAdmin(prev => ({ ...prev, faceIdConfigured: true, faceIdData: photoToVerify }));
-                setStatus({ type: 'success', message: "Succès ! Visage enregistré et sécurisé." });
+                setStatus({ type: 'success', message: "Succès ! Visage identifié et sécurisé." });
                 return true;
             } else {
+                console.warn("No face detected");
                 setNewAdmin(prev => ({ ...prev, faceIdConfigured: false, faceIdData: '' }));
-                setStatus({ type: 'error', message: "Échec : Aucun visage net détecté. Rapprochez-vous ou éclairez votre visage." });
+                setStatus({ type: 'error', message: "Aucun visage détecté. Assurez-vous d'être bien éclairé." });
                 return false;
             }
         } catch (error) {
             console.error("Erreur Face ID détaillée:", error);
-            setStatus({ type: 'error', message: `Erreur technique : ${error.message || "Problème IA"}` });
+            setStatus({ type: 'error', message: `Erreur interne IA : ${error.message}` });
             return false;
         } finally {
-            setTimeout(() => setStatus(null), 4000);
+            // Keep success status visible longer
+            setTimeout(() => setStatus(null), 5000);
         }
     };
 
@@ -365,10 +366,12 @@ const AdminPage = () => {
             const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
 
             if (webcamMode === 'photo') {
+                setStatus({ type: 'loading', message: "Photo de profil capturée..." });
                 // Capture profile photo
                 setNewAdmin(prev => ({ ...prev, photo: dataUrl }));
-                stopWebcam();
+                setTimeout(stopWebcam, 500); // Small delay for UX
             } else {
+                setStatus({ type: 'loading', message: "Traitement de l'image..." });
                 // Capture Face ID data (verify first)
                 const success = await verifyFaceId(dataUrl);
                 if (success) {
