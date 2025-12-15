@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as faceapi from 'face-api.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Lock, Unlock, ScanFace, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
+import { X, Lock, Unlock, Eye, AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
 
 const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
@@ -9,23 +9,18 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [loadingState, setLoadingState] = useState('initial');
     const [error, setError] = useState(null);
-    const [matchFound, setMatchFound] = useState(null);
-    const [scanProgress, setScanProgress] = useState(0);
     const [scanMessage, setScanMessage] = useState(null);
-    const [failedAttempts, setFailedAttempts] = useState(0); // 3 Max
 
+    // Logic refs
     const pendingAdminRef = useRef(null);
     const failedAttemptsRef = useRef(0);
+    const unknownFaceTimerRef = useRef(0); // Counts frames of unknown face
 
     // Euclidean distance helper
     const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
     // Eye Aspect Ratio (EAR)
     const getEAR = (points) => {
-        // points: 0..5 (6 points)
-        // 0=left corner, 3=right corner
-        // 1,5=top/bottom pair 1
-        // 2,4=top/bottom pair 2
         const A = dist(points[1], points[5]);
         const B = dist(points[2], points[4]);
         const C = dist(points[0], points[3]);
@@ -53,10 +48,8 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 setLoadingState('loading');
                 setError(null);
                 setScanMessage(null);
-                setMatchFound(null);
-                setScanProgress(0);
-                setFailedAttempts(0);
                 failedAttemptsRef.current = 0;
+                unknownFaceTimerRef.current = 0;
                 pendingAdminRef.current = null;
 
                 // 1. Charger les modèles
@@ -101,8 +94,9 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
             } catch (err) {
                 console.error("FaceLogin Error:", err);
                 if (isMounted) {
-                    setError("Erreur système ou accès caméra refusé.");
+                    setError("Erreur système.");
                     setLoadingState('error');
+                    setTimeout(onClose, 2000); // Auto close on system error
                 }
                 setIsLoading(false);
             }
@@ -138,20 +132,23 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                         labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]));
                     }
                 }
-            } catch (err) { console.warn("Skip:", err); }
+            } catch (err) { }
         }
         return labeledDescriptors;
     };
 
-    const handleFailure = (msg) => {
+    const handleStrictFailure = (reason) => {
         failedAttemptsRef.current += 1;
-        setFailedAttempts(failedAttemptsRef.current);
-        setScanMessage(`${msg} (${failedAttemptsRef.current}/3)`);
+        setScanMessage(`Non reconnu (${failedAttemptsRef.current}/3)`); // Minimal feedback
 
         if (failedAttemptsRef.current >= 3) {
             setLoadingState('error');
-            setError("Accès Refusé : Nombre maximal de tentatives atteint.");
-            setScanMessage("Accès Bloqué 🔒");
+            setError("Accès Bloqué. Fermeture...");
+
+            // STRICT LOCKOUT: Close modal
+            setTimeout(() => {
+                onClose();
+            }, 1500);
             return true; // blocked
         }
         return false;
@@ -164,7 +161,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
 
         return setInterval(async () => {
             if (!videoRef.current || !isOpen) return;
-            if (failedAttemptsRef.current >= 3) return; // Stop if blocked
+            if (failedAttemptsRef.current >= 3) return; // Blocked
 
             try {
                 const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
@@ -174,7 +171,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     .withFaceExpressions();
 
                 if (detections.length > 1) {
-                    setScanMessage("Une seule personne à la fois !");
+                    setScanMessage("Une seule personne !");
                     return;
                 }
 
@@ -183,17 +180,27 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     const match = faceMatcher.findBestMatch(detection.descriptor);
                     const isIdentityValid = match.label !== 'unknown' && !match.label.startsWith('error_');
 
-                    // PHASE 1: INITIAL IDENTITY
+                    // PHASE 1: INITIAL IDENTITY SCAN
                     if (currentPhase === 'scanning') {
                         if (isIdentityValid) {
+                            // Identity Found -> Move to Liveness
                             const admin = adminAccounts.find(a => a.username === match.label);
                             if (admin) {
                                 pendingAdminRef.current = admin;
                                 currentPhase = 'liveness';
-                                setMatchFound(match.label);
                                 setLoadingState('liveness');
-                                setScanProgress(60);
-                                setScanMessage("Analyse biométrique..."); // Discreet
+                                setScanMessage("Vérification...");
+                                unknownFaceTimerRef.current = 0; // Reset timer
+                            }
+                        } else {
+                            // Identity UNKNOWN -> Count duration
+                            unknownFaceTimerRef.current += 1;
+                            // If unknown for > 10 frames (~2 seconds) -> STRIKE 1
+                            if (unknownFaceTimerRef.current > 10) {
+                                unknownFaceTimerRef.current = 0;
+                                if (handleStrictFailure("Visage inconnu")) {
+                                    return; // Locked out
+                                }
                             }
                         }
                     }
@@ -202,12 +209,11 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     else if (currentPhase === 'liveness') {
                         // Anti-Swap Check
                         if (!isIdentityValid || (pendingAdminRef.current && match.label !== pendingAdminRef.current.username)) {
-                            if (handleFailure("Identité non reconnue")) {
-                                currentPhase = 'blocked';
-                            } else {
-                                currentPhase = 'scanning'; // Retry
-                                setScanProgress(0);
+                            // IMMEDIATE SECURITY FAIL
+                            if (handleStrictFailure("Identité perdue")) {
+                                return;
                             }
+                            currentPhase = 'scanning';
                             return;
                         }
 
@@ -216,27 +222,24 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                         const rightEye = detection.landmarks.getRightEye();
                         const ear = (getEAR(leftEye) + getEAR(rightEye)) / 2;
 
-                        // EAR < 0.25 usually means closed eyes
                         const isBlinking = ear < 0.25;
                         const now = Date.now();
 
-                        // Check logic: Natural blink is fast (detected once or twice)
                         if (isBlinking && (now - lastBlinkTime > 500)) {
                             lastBlinkTime = now;
-                            livenessSequence += 2; // Blinking counts as significant liveness proof
+                            livenessSequence += 2;
                         }
 
-                        // 2. SMILE DETECTION (Legacy support, but discreet)
+                        // 2. SMILE (Optional/Discreet)
                         if (detection.expressions.happy > 0.7) {
                             livenessSequence++;
                         }
 
-                        // SUCCESS THRESHOLD
+                        // SUCCESS
                         if (livenessSequence > 2) {
                             currentPhase = 'complete';
-                            setScanProgress(100);
                             setLoadingState('success');
-                            setScanMessage("Vérification terminée");
+                            setScanMessage("Confirmé");
 
                             setTimeout(() => {
                                 if (pendingAdminRef.current) {
@@ -247,11 +250,10 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     }
 
                 } else {
-                    // Face Lost logic
+                    // No Face Found
                     if (currentPhase === 'liveness') {
-                        setScanMessage("Visage perdu...");
+                        setScanMessage("...");
                         currentPhase = 'scanning';
-                        setScanProgress(0);
                     }
                 }
             } catch (err) { }
@@ -266,137 +268,83 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl p-4"
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
             >
                 <div className="relative w-full max-w-sm mx-auto flex flex-col items-center">
-                    <div className="mb-8 text-center space-y-2">
+
+                    {/* Minimalist Header */}
+                    <div className="mb-6 text-center">
                         <motion.div
-                            initial={{ y: -20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            className="inline-flex items-center justify-center p-3 bg-white/10 rounded-full mb-4 backdrop-blur-md"
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="inline-flex items-center justify-center mb-2"
                         >
                             {loadingState === 'success' ? (
-                                <Unlock className="w-8 h-8 text-green-400" />
-                            ) : loadingState === 'liveness' ? (
-                                <Eye className="w-8 h-8 text-blue-400 animate-pulse" />
+                                <Unlock className="w-6 h-6 text-green-500" />
                             ) : loadingState === 'error' ? (
-                                <Lock className="w-8 h-8 text-red-500" />
+                                <Lock className="w-6 h-6 text-red-500" />
                             ) : (
-                                <ScanFace className="w-8 h-8 text-white" />
+                                <Eye className="w-6 h-6 text-white/50" />
                             )}
                         </motion.div>
-                        <h2 className="text-2xl font-semibold text-white tracking-tight">
-                            {loadingState === 'success' ? 'Identité Confirmée' :
-                                loadingState === 'error' ? 'Accès Refusé' :
-                                    'Face ID Sécurisé'}
-                        </h2>
-                        <p className="text-sm text-white/60 min-h-[1.5rem]">
+                        <p className="text-sm text-white/70 font-medium">
                             {scanMessage || (
                                 <>
                                     {loadingState === 'loading' && 'Initialisation...'}
-                                    {loadingState === 'scanning' && 'Regardez la caméra'}
-                                    {loadingState === 'liveness' && <span className="text-blue-400 font-medium">Analyse en cours...</span>}
-                                    {loadingState === 'success' && `Bienvenue, ${matchFound}`}
+                                    {loadingState === 'scanning' && 'Authentification requise'}
+                                    {loadingState === 'liveness' && 'Analyse...'}
+                                    {loadingState === 'success' && 'Succès'}
                                     {loadingState === 'error' && error}
                                 </>
                             )}
                         </p>
                     </div>
 
-                    <div className="relative w-64 h-64">
-                        <div className={`absolute inset-0 rounded-[2.5rem] overflow-hidden bg-black border-[3px] shadow-2xl transition-colors duration-500 ${loadingState === 'liveness' ? 'border-blue-400' :
+                    {/* ULTRA DISCREET VIDEO CONTAINER */}
+                    {/* No scan lines, no rings, just the video with subtle border feedback */}
+                    <div className="relative w-48 h-48 rounded-full overflow-hidden shadow-2xl transition-all duration-500">
+                        {/* Status Border */}
+                        <div className={`absolute inset-0 z-10 border-[4px] rounded-full transition-colors duration-300 ${loadingState === 'liveness' ? 'border-blue-500/50' :
                                 loadingState === 'success' ? 'border-green-500' :
-                                    loadingState === 'error' ? 'border-red-500' : 'border-white/20'
-                            }`}>
-                            <video
-                                ref={videoRef}
-                                muted
-                                playsInline
-                                className={`w-full h-full object-cover transform scale-125 transition-all duration-700 ${loadingState === 'success' ? 'blur-md scale-100 opacity-50' : ''
-                                    }`}
-                            />
+                                    loadingState === 'error' ? 'border-red-500' : 'border-white/10'
+                            }`}></div>
 
-                            {loadingState === 'scanning' && (
-                                <div className="absolute inset-0">
-                                    <motion.div
-                                        animate={{
-                                            background: [
-                                                "linear-gradient(to bottom, transparent 0%, rgba(59,130,246,0.2) 50%, transparent 100%)",
-                                                "linear-gradient(to bottom, transparent 0%, rgba(59,130,246,0.5) 50%, transparent 100%)"
-                                            ],
-                                            top: ["-100%", "100%"]
-                                        }}
-                                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                                        className="absolute w-full h-1/2 left-0"
-                                    />
-                                </div>
+                        <video
+                            ref={videoRef}
+                            muted
+                            playsInline
+                            className="w-full h-full object-cover transform scale-125 hover:scale-130 transition-transform duration-700"
+                        />
+
+                        {/* Success Overlay */}
+                        <AnimatePresence>
+                            {loadingState === 'success' && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    className="absolute inset-0 z-20 flex items-center justify-center bg-black/40"
+                                >
+                                </motion.div>
                             )}
+                        </AnimatePresence>
 
-                            {/* Discreet Liveness Indicator (Subtle pulse) */}
-                            <AnimatePresence>
-                                {loadingState === 'liveness' && (
-                                    <motion.div
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        exit={{ opacity: 0 }}
-                                        className="absolute inset-0 border-4 border-blue-500/50 rounded-[2.5rem] animate-pulse"
-                                    />
-                                )}
-                            </AnimatePresence>
-
-                            {/* Success Overlay */}
-                            <AnimatePresence>
-                                {loadingState === 'success' && (
-                                    <motion.div
-                                        initial={{ opacity: 0, scale: 0.8 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        className="absolute inset-0 flex items-center justify-center bg-black/40"
-                                    >
-                                        <div className="bg-green-500 rounded-full p-4 shadow-lg">
-                                            <CheckCircle2 className="w-12 h-12 text-white" />
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-
-                            {/* Error Overlay */}
+                        {/* Error Overlay */}
+                        <AnimatePresence>
                             {loadingState === 'error' && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-                                    <div className="text-center p-4">
-                                        <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-2" />
-                                        <p className="text-white text-xs font-medium">{error}</p>
-                                    </div>
-                                </div>
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
+                                >
+                                    <AlertCircle className="w-8 h-8 text-red-500" />
+                                </motion.div>
                             )}
-                        </div>
-
-                        {/* Processing Ring */}
-                        {(loadingState === 'loading' || loadingState === 'liveness') && (
-                            <div className="absolute -inset-4 border-4 border-white/10 rounded-[3rem] border-t-blue-500 animate-spin"></div>
-                        )}
-
-                        <svg className="absolute -inset-4 w-[calc(100%+2rem)] h-[calc(100%+2rem)] rotate-[-90deg]">
-                            <circle
-                                cx="50%"
-                                cy="50%"
-                                r="48%"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                                className={`transition-all duration-300 ${loadingState === 'success' ? 'text-green-500' :
-                                        loadingState === 'error' ? 'text-red-500' : 'text-blue-500'
-                                    }`}
-                                strokeDasharray="100 100"
-                                strokeDashoffset={100 - scanProgress}
-                                pathLength="100"
-                                strokeLinecap="round"
-                            />
-                        </svg>
+                        </AnimatePresence>
                     </div>
 
                     <div className="mt-8">
-                        <Button variant="ghost" className="text-white/40 hover:text-white" onClick={onClose}>
-                            <X className="w-5 h-5 mr-2" />
+                        <Button variant="ghost" size="sm" className="text-white/30 hover:text-white hover:bg-white/10" onClick={onClose}>
+                            <X className="w-4 h-4 mr-2" />
                             Annuler
                         </Button>
                     </div>
