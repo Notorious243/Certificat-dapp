@@ -12,6 +12,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
     const [matchFound, setMatchFound] = useState(null);
     const [scanProgress, setScanProgress] = useState(0);
     const [livenessStep, setLivenessStep] = useState(null); // null -> 'smile'
+    const [scanMessage, setScanMessage] = useState(null);
     const pendingAdminRef = useRef(null);
 
     // Initialisation
@@ -34,6 +35,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 setIsLoading(true);
                 setLoadingState('loading');
                 setError(null);
+                setScanMessage(null);
                 setMatchFound(null);
                 setScanProgress(0);
                 setLivenessStep(null);
@@ -153,72 +155,103 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
     };
 
     const startDetection = (faceMatcher) => {
-        let currentPhase = 'scanning'; // Local variable to avoid closure staleness
+        let currentPhase = 'scanning';
+        let livenessSequence = 0; // To track sustained smile
 
         return setInterval(async () => {
             if (!videoRef.current || !isOpen) return;
-
-            // Safety check for video readiness
             if (videoRef.current.readyState !== 4) return;
 
             try {
                 // Détection visage + EXPRESSIONS
                 const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
 
-                // We need expressions for liveness
                 const detections = await faceapi.detectAllFaces(videoRef.current, options)
                     .withFaceLandmarks()
                     .withFaceDescriptors()
                     .withFaceExpressions();
 
+                // SECURITY: REJECT MULTIPLE FACES
+                if (detections.length > 1) {
+                    setScanMessage("Une seule personne à la fois ! ⚠️");
+                    setLoadingState('error');
+                    setScanProgress(0);
+                    return;
+                }
+
                 if (detections.length > 0) {
-                    const detection = detections[0]; // Focus on primary face
+                    const detection = detections[0];
 
-                    // PHASE 1: IDENTITY CHECK
+                    // CONTINUOUS IDENTITY CHECK (Every Frame)
+                    const match = faceMatcher.findBestMatch(detection.descriptor);
+                    const isIdentityValid = match.label !== 'unknown' && !match.label.startsWith('error_');
+
+                    // PHASE 1: INITIAL IDENTITY SCAN
                     if (currentPhase === 'scanning') {
-                        setScanProgress(prev => Math.min(prev + 2, 70));
-
-                        const match = faceMatcher.findBestMatch(detection.descriptor);
-
-                        if (match.label !== 'unknown' && !match.label.startsWith('error_')) {
-                            // MATCH IDENTITÉ ! -> Passage en Liveness Check
+                        if (isIdentityValid) {
                             const admin = adminAccounts.find(a => a.username === match.label);
                             if (admin) {
                                 pendingAdminRef.current = admin;
-                                currentPhase = 'liveness'; // Internal switch
-
+                                currentPhase = 'liveness';
                                 setMatchFound(match.label);
-                                setLoadingState('liveness'); // UI update
-                                setLivenessStep('smile'); // UI: "Souriez !"
+                                setLoadingState('liveness');
+                                setLivenessStep('smile');
                                 setScanProgress(75);
                             }
+                        } else {
+                            setScanProgress(prev => Math.min(prev + 2, 60)); // Cap progress if face detected but not recognized
                         }
                     }
+
                     // PHASE 2: LIVENESS CHECK (SMILE)
                     else if (currentPhase === 'liveness') {
+                        // CRITICAL SECURITY: RE-VERIFY IDENTITY
+                        // If the person changed (Swap Attack), ABORT IMMEDIATELY
+                        if (!isIdentityValid || (pendingAdminRef.current && match.label !== pendingAdminRef.current.username)) {
+                            console.warn("Security Alert: Face Swapped or Identity Lost during Liveness Check");
+                            setScanMessage("Identité non reconnue ! ⛔");
+                            setLoadingState('error');
+                            currentPhase = 'scanning'; // Reset
+                            setScanProgress(0);
+                            return;
+                        }
+
                         // Check Smile
                         if (detection.expressions.happy > 0.7) {
-                            // SUCCESS !!
-                            currentPhase = 'complete'; // Stop logic
-                            setScanProgress(100);
-                            setLoadingState('success');
+                            livenessSequence++;
 
-                            setTimeout(() => {
-                                if (pendingAdminRef.current) {
-                                    onLogin(pendingAdminRef.current);
-                                }
-                            }, 1000);
+                            // Require sustained smile (3 frames ~ 600ms) to prevent glitching
+                            if (livenessSequence > 2) {
+                                // SUCCESS !!
+                                currentPhase = 'complete';
+                                setScanProgress(100);
+                                setLoadingState('success');
+
+                                setTimeout(() => {
+                                    if (pendingAdminRef.current) {
+                                        onLogin(pendingAdminRef.current);
+                                    }
+                                }, 1000);
+                            }
+                        } else {
+                            livenessSequence = 0; // Reset if smile drops
                         }
                     }
 
                 } else {
-                    if (currentPhase === 'scanning') {
+                    // No face found
+                    if (currentPhase === 'liveness') {
+                        // Lost face during liveness -> Reset security
+                        setScanMessage("Visage perdu. Recommencez.");
+                        currentPhase = 'scanning';
+                        setLoadingState('scanning');
+                        setScanProgress(0);
+                    } else {
                         setScanProgress(prev => Math.max(prev - 2, 0));
                     }
                 }
             } catch (err) {
-                // Ignore transient errors in loop
-                // console.warn(err); 
+                // Ignore transient
             }
         }, 200);
     };
@@ -255,11 +288,19 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                                 loadingState === 'liveness' ? 'Vérification Vitalité' : 'Face ID Sécurisé'}
                         </h2>
                         <p className="text-sm text-white/60">
-                            {loadingState === 'loading' && 'Initialisation IA...'}
-                            {loadingState === 'scanning' && 'Positionnez votre visage'}
-                            {loadingState === 'liveness' && <span className="text-yellow-400 font-bold text-lg">Souriez pour confirmer ! 😄</span>}
-                            {loadingState === 'success' && `Bienvenue, ${matchFound}`}
-                            {loadingState === 'error' && error}
+                            {scanMessage ? (
+                                <span className={loadingState === 'error' ? "text-red-400 font-bold" : "text-yellow-400 font-bold"}>
+                                    {scanMessage}
+                                </span>
+                            ) : (
+                                <>
+                                    {loadingState === 'loading' && 'Initialisation IA...'}
+                                    {loadingState === 'scanning' && 'Positionnez votre visage'}
+                                    {loadingState === 'liveness' && <span className="text-yellow-400 font-bold text-lg">Souriez pour confirmer ! 😄</span>}
+                                    {loadingState === 'success' && `Bienvenue, ${matchFound}`}
+                                    {loadingState === 'error' && error}
+                                </>
+                            )}
                         </p>
                     </div>
 
@@ -295,8 +336,6 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                                         }}
                                         className="absolute w-full h-1/2 left-0"
                                     />
-                                    {/* Face Tracking Indicator (Subtle frame) */}
-                                    <div className="absolute inset-8 border-2 border-white/20 rounded-2xl opacity-50"></div>
                                 </div>
                             )}
 
@@ -341,29 +380,33 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                             )}
                         </div>
 
-
                         {/* Orbiting Loading Ring (around the video) */}
                         {loadingState === 'loading' && (
                             <div className="absolute -inset-4 border-4 border-white/10 rounded-[3rem] border-t-blue-500 animate-spin"></div>
                         )}
 
-                        {/* Success Ring Pulse */}
-                        {loadingState === 'success' && (
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1.1 }}
-                                className="absolute -inset-1 border-2 border-green-500 rounded-[2.6rem]"
+                        {/* Progress Ring (SVG) */}
+                        <svg className="absolute -inset-4 w-[calc(100%+2rem)] h-[calc(100%+2rem)] rotate-[-90deg]">
+                            <circle
+                                cx="50%"
+                                cy="50%"
+                                r="48%"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                                className={`transition-all duration-300 ${loadingState === 'success' ? 'text-green-500' : 'text-blue-500'
+                                    }`}
+                                strokeDasharray="100 100" // Approximatif
+                                strokeDashoffset={100 - scanProgress}
+                                pathLength="100"
+                                strokeLinecap="round"
                             />
-                        )}
+                        </svg>
                     </div>
 
-                    {/* Footer Actions */}
-                    <div className="mt-12">
-                        <Button
-                            variant="ghost"
-                            className="text-white/50 hover:text-white hover:bg-white/10 rounded-full px-8"
-                            onClick={onClose}
-                        >
+                    <div className="mt-8">
+                        <Button variant="ghost" className="text-white/40 hover:text-white" onClick={onClose}>
+                            <X className="w-5 h-5 mr-2" />
                             Annuler
                         </Button>
                     </div>
