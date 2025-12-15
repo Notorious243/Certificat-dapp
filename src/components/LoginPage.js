@@ -8,6 +8,7 @@ import { Label } from './ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { StarsBackground } from './ui/stars-background';
 import { ShootingStars } from './ui/shooting-stars';
+import FaceLogin from './FaceLogin';
 
 // Admin accounts
 const ADMIN_ACCOUNTS = [
@@ -21,6 +22,18 @@ const LoginPage = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [credentials, setCredentials] = useState({ username: '', password: '' });
     const [error, setError] = useState('');
+    const [showFaceLogin, setShowFaceLogin] = useState(false);
+
+    const handleFaceLoginSuccess = (account) => {
+        setShowFaceLogin(false);
+        setIsLoading(true);
+        // Simuler un petit délai de connexion
+        setTimeout(() => {
+            sessionStorage.setItem('isLoggedIn', 'true');
+            sessionStorage.setItem('currentUser', JSON.stringify(account));
+            navigate('/admin');
+        }, 800);
+    };
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -126,6 +139,22 @@ const LoginPage = () => {
                                 )}
                             </Button>
 
+                            <div className="relative flex items-center justify-center my-4">
+                                <span className="absolute px-2 bg-slate-900 text-xs text-slate-500">OU</span>
+                                <div className="w-full border-t border-slate-800"></div>
+                            </div>
+
+                            <Button
+                                type="button"
+                                onClick={() => setShowFaceLogin(true)}
+                                className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-colors flex items-center justify-center gap-2"
+                            >
+                                <div className="h-5 w-5 rounded-md border-2 border-slate-400 flex items-center justify-center">
+                                    <div className="h-2 w-2 bg-slate-400 rounded-full" />
+                                </div>
+                                Se connecter avec Face ID
+                            </Button>
+
                             {error && (
                                 <motion.div
                                     initial={{ opacity: 0, height: 0 }}
@@ -154,7 +183,14 @@ const LoginPage = () => {
                     </div>
                 </Card>
             </motion.div>
-        </div>
+
+            <FaceLogin
+                isOpen={showFaceLogin}
+                onClose={() => setShowFaceLogin(false)}
+                onLogin={handleFaceLoginSuccess}
+                adminAccounts={ADMIN_ACCOUNTS}
+            />
+        </div >
     );
 };
 
