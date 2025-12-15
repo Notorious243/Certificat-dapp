@@ -981,12 +981,18 @@ const AdminPage = () => {
             doc.setFontSize(8);
             doc.setTextColor(148, 163, 184);
             doc.text("ID Unique", width / 2, footerY + 10, { align: "center" });
+            // ID Unique
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184);
+            doc.text("ID Unique", width / 2, footerY + 10, { align: "center" });
+
             doc.setFont("courier", "normal");
-            doc.setFontSize(9);
+            doc.setFontSize(7); // Taille réduite pour afficher tout l'ID
             doc.setTextColor(71, 85, 105);
 
-            const displayId = uniqueId.substring(0, 16).toUpperCase();
-            doc.text(displayId, width / 2, footerY + 15, { align: "center" });
+            // Afficher l'ID complet (0x...) pour permettre la vérification manuelle exacte
+            doc.text(uniqueId, width / 2, footerY + 14, { align: "center" });
 
             // Right: QR Code - Pointe vers la page de vérification
             try {
@@ -1056,7 +1062,7 @@ const AdminPage = () => {
                                 const emailParams = {
                                     to_name: `${data.firstName} ${data.lastName}`,
                                     to_email: data.email,
-                                    certificate_link: `${APP_URL}/?hash=${hash}`,
+                                    certificate_link: `${APP_URL}/?verify=${hash}`, // Correction: use 'verify' parameter for auto-verification
                                     certificate_hash: hash,
                                     issue_date: new Date().toLocaleDateString('fr-FR')
                                 };
