@@ -316,6 +316,7 @@ const AdminPage = () => {
     };
 
     const startWebcam = async (mode = 'photo') => {
+        // DEBUG: Force alert to confirm click
         console.log("Starting webcam in mode:", mode);
         setStatus({ type: 'loading', message: "Ouverture de la caméra..." });
         setWebcamMode(mode);
