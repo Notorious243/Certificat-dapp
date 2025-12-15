@@ -94,17 +94,33 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
             try {
                 if (admin.faceIdConfigured && (admin.faceIdData || admin.photo)) {
                     const img = new Image();
+                    img.crossOrigin = "anonymous"; // Avoid CORS issues
                     img.src = admin.faceIdData || admin.photo;
-                    await new Promise(resolve => img.onload = resolve);
 
-                    const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                    });
 
-                    if (detections) {
-                        labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]));
+                    // Skip if dimensions are invalid
+                    if (img.width === 0 || img.height === 0) {
+                        console.warn(`Skipping invalid image for ${admin.username}: dimensions 0x0`);
+                        continue;
+                    }
+
+                    try {
+                        const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+                        if (detections) {
+                            labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]));
+                        }
+                    } catch (tensorError) {
+                        console.error(`Tensor error for ${admin.username}:`, tensorError);
+                        // Continue to next admin, do not crash
+                        continue;
                     }
                 }
             } catch (err) {
-                console.warn(`Skip admin ${admin.firstName}:`, err);
+                console.warn(`Skip admin ${admin.firstName} (Image load error):`, err);
             }
         }
         return labeledDescriptors;
