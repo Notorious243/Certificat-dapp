@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { jsPDF } from "jspdf";
 import emailjs from '@emailjs/browser';
 import Web3 from 'web3';
+import * as faceapi from 'face-api.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -11,7 +12,7 @@ import {
     Shield, AlertTriangle, CheckCircle, LogOut, FileCheck, FileX,
     Network, Clock, Copy, FileText, Download, RefreshCw,
     LayoutDashboard, Menu, ChevronRight, Users, Award, Eye, EyeOff,
-    Camera, Upload, X, Ban, ShieldAlert, Search, PanelLeft, Mail
+    Camera, Upload, X, Ban, ShieldAlert, Search, PanelLeft, Mail, ScanFace
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import CertificatePreview from './CertificatePreview';
@@ -257,6 +258,72 @@ const AdminPage = () => {
         setTimeout(() => setStatus(null), 3000);
     };
 
+    // Verify Face ID capability for the current photo
+    const verifyFaceId = async () => {
+        if (!newAdmin.photo) {
+            setStatus({ type: 'error', message: "Veuillez d'abord ajouter une photo." });
+            return;
+        }
+
+        try {
+            setStatus({ type: 'loading', message: "Vérification de la compatibilité Face ID..." });
+
+            // Load required models
+            await Promise.all([
+                faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
+                faceapi.nets.faceLandmark68.loadFromUri('/models'),
+                faceapi.nets.faceRecognitionNet.loadFromUri('/models')
+            ]);
+
+            // Create an image element to detect face
+            const img = new Image();
+            img.src = newAdmin.photo;
+            await new Promise(resolve => img.onload = resolve);
+
+            // Detect face
+            const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+
+            if (detections) {
+                setNewAdmin(prev => ({ ...prev, faceIdConfigured: true }));
+                setStatus({ type: 'success', message: "Face ID configuré avec succès ! Visage détecté." });
+            } else {
+                setNewAdmin(prev => ({ ...prev, faceIdConfigured: false }));
+                setStatus({ type: 'error', message: "Aucun visage détecté. Veuillez utiliser une photo plus claire." });
+            }
+        } catch (error) {
+            console.error("Erreur Face ID:", error);
+            setStatus({ type: 'error', message: "Erreur lors de la configuration Face ID." });
+        }
+        setTimeout(() => setStatus(null), 3000);
+    };
+
+    // Corrected Capture Photo function
+    const capturePhoto = () => {
+        if (videoRef.current && canvasRef.current) {
+            const video = videoRef.current;
+            const canvas = canvasRef.current;
+
+            // Ensure video dimensions are available
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+                console.warn("Video dimensions not ready yet");
+                return;
+            }
+
+            // Set canvas size to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Get data URL
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+            setNewAdmin(prev => ({ ...prev, photo: dataUrl, faceIdConfigured: false })); // Reset Face ID config on new photo
+            stopWebcam();
+        }
+    };
+
     const handleLogout = () => {
         sessionStorage.removeItem('isLoggedIn');
         sessionStorage.removeItem('currentUser');
@@ -282,18 +349,7 @@ const AdminPage = () => {
         setShowWebcam(false);
     };
 
-    const capturePhoto = () => {
-        if (videoRef.current && canvasRef.current) {
-            const context = canvasRef.current.getContext('2d');
-            // Set canvas dimensions to match video
-            canvasRef.current.width = videoRef.current.videoWidth;
-            canvasRef.current.height = videoRef.current.videoHeight;
-            context.drawImage(videoRef.current, 0, 0);
-            const dataUrl = canvasRef.current.toDataURL('image/jpeg');
-            setNewAdmin({ ...newAdmin, photo: dataUrl });
-            stopWebcam();
-        }
-    };
+
 
     const handleFileUpload = (e) => {
         const file = e.target.files[0];
@@ -1873,7 +1929,20 @@ const AdminPage = () => {
                                                         className="flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 font-semibold shadow-sm w-full md:w-48"
                                                     >
                                                         <Camera className="h-4 w-4" />
-                                                        Configurer Face ID
+                                                        Prendre Photo
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        onClick={verifyFaceId}
+                                                        disabled={!newAdmin.photo}
+                                                        className={`flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 font-semibold shadow-sm w-full md:w-48 transition-all ${newAdmin.faceIdConfigured
+                                                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                                                            : 'hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700'
+                                                            }`}
+                                                    >
+                                                        <ScanFace className="h-4 w-4" />
+                                                        {newAdmin.faceIdConfigured ? 'Face ID Configuré' : 'Configurer Face ID'}
                                                     </Button>
                                                 </div>
                                             </div>
@@ -1905,8 +1974,16 @@ const AdminPage = () => {
                                                                 Capturer
                                                             </Button>
                                                         </div>
-                                                        <canvas ref={canvasRef} className="hidden" />
+                                                        <canvas ref={canvasRef} className="hidden" width={640} height={480} />
                                                     </div>
+                                                </div>
+                                            )}
+
+                                            {/* Status Face ID */}
+                                            {newAdmin.faceIdConfigured && (
+                                                <div className="flex items-center justify-center gap-2 p-3 bg-green-50 text-green-700 rounded-xl border border-green-200 mb-6">
+                                                    <CheckCircle className="h-5 w-5" />
+                                                    <span className="font-medium">Face ID prêt pour cet administrateur</span>
                                                 </div>
                                             )}
 

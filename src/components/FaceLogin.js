@@ -65,7 +65,13 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
             } catch (err) {
                 console.error("FaceLogin Error:", err);
                 if (isMounted) {
-                    setError("Impossible d'accéder à la caméra ou de charger l'IA.");
+                    if (err.name === 'NotAllowedError' || err.name === 'NotFoundError') {
+                        setError("Accès caméra refusé. Vérifiez vos permissions.");
+                    } else if (err.message && err.message.includes('createInstance')) {
+                        setError("Erreur chargement IA. Rafraîchissez la page.");
+                    } else {
+                        setError("Erreur technique: " + (err.message || "Inconnue"));
+                    }
                     setLoadingState('error');
                 }
                 setIsLoading(false);
