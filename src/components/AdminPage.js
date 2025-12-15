@@ -1993,37 +1993,7 @@ const AdminPage = () => {
                                                 </div>
                                             </div>
 
-                                            {/* Webcam Modal Overlay */}
-                                            {showWebcam && (
-                                                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                                                    <div className="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4">
-                                                        <div className="flex justify-between items-center">
-                                                            <h3 className="font-bold text-lg">Prendre une photo</h3>
-                                                            <Button type="button" variant="ghost" size="icon" onClick={stopWebcam}>
-                                                                <X className="h-5 w-5" />
-                                                            </Button>
-                                                        </div>
-                                                        <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
-                                                            <video
-                                                                ref={videoRef}
-                                                                autoPlay
-                                                                playsInline
-                                                                className="w-full h-full object-cover"
-                                                                onLoadedMetadata={() => {
-                                                                    if (videoRef.current) videoRef.current.play();
-                                                                }}
-                                                            />
-                                                        </div>
-                                                        <div className="flex justify-center">
-                                                            <Button type="button" onClick={capturePhoto} className="bg-[#1e3a8a] text-white gap-2">
-                                                                <Camera className="h-4 w-4" />
-                                                                Capturer
-                                                            </Button>
-                                                        </div>
-                                                        <canvas ref={canvasRef} className="hidden" width={640} height={480} />
-                                                    </div>
-                                                </div>
-                                            )}
+
 
                                             {/* Status Face ID */}
                                             {newAdmin.faceIdConfigured && (
@@ -2089,6 +2059,60 @@ const AdminPage = () => {
                                             <Button type="submit" className="w-full bg-[#1e3a8a] hover:bg-blue-900 text-white">
                                                 {editingAdmin ? 'Modifier l\'administrateur' : 'Ajouter Administrateur'}
                                             </Button>
+
+                                            {/* Backup for Cross-Device Support */}
+                                            <div className="mt-8 pt-6 border-t border-gray-100">
+                                                <h4 className="text-sm font-semibold text-gray-500 mb-4">Synchronisation Multi-Appareils</h4>
+                                                <div className="flex gap-4">
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        onClick={() => {
+                                                            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(admins));
+                                                            const downloadAnchorNode = document.createElement('a');
+                                                            downloadAnchorNode.setAttribute("href", dataStr);
+                                                            downloadAnchorNode.setAttribute("download", "admin_config.json");
+                                                            document.body.appendChild(downloadAnchorNode);
+                                                            downloadAnchorNode.click();
+                                                            downloadAnchorNode.remove();
+                                                        }}
+                                                    >
+                                                        <Download className="mr-2 h-4 w-4" /> Sauvegarder Config
+                                                    </Button>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="file"
+                                                            accept=".json"
+                                                            onChange={(e) => {
+                                                                const file = e.target.files[0];
+                                                                if (!file) return;
+                                                                const reader = new FileReader();
+                                                                reader.onload = (event) => {
+                                                                    try {
+                                                                        const imported = JSON.parse(event.target.result);
+                                                                        if (Array.isArray(imported)) {
+                                                                            setAdmins(imported);
+                                                                            localStorage.setItem('registeredAdmins', JSON.stringify(imported));
+                                                                            setStatus({ type: 'success', message: "Configuration importée avec succès !" });
+                                                                            setTimeout(() => setStatus(null), 3000);
+                                                                        }
+                                                                    } catch (err) {
+                                                                        setStatus({ type: 'error', message: "Fichier invalide." });
+                                                                    }
+                                                                };
+                                                                reader.readAsText(file);
+                                                            }}
+                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                        />
+                                                        <Button type="button" variant="outline">
+                                                            <Upload className="mr-2 h-4 w-4" /> Importer Config
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-gray-400 mt-2">
+                                                    Pour utiliser Face ID sur un autre appareil, sauvegardez ce fichier et importez-le sur l'autre appareil.
+                                                </p>
+                                            </div>
                                         </form>
                                     </CardContent>
                                 </Card>
@@ -2099,6 +2123,38 @@ const AdminPage = () => {
                     </AnimatePresence>
                 </main>
             </motion.div>
+
+            {/* Webcam Modal Overlay - MOVED OUTSIDE MOTION CONTEXT */}
+            {showWebcam && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4 shadow-2xl">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-bold text-lg">Prendre une photo ({webcamMode === 'photo' ? 'Profil' : 'Biométrie'})</h3>
+                            <Button type="button" variant="ghost" size="icon" onClick={stopWebcam}>
+                                <X className="h-5 w-5" />
+                            </Button>
+                        </div>
+                        <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                className="w-full h-full object-cover"
+                                onLoadedMetadata={() => {
+                                    if (videoRef.current) videoRef.current.play();
+                                }}
+                            />
+                        </div>
+                        <div className="flex justify-center">
+                            <Button type="button" onClick={capturePhoto} className="bg-[#1e3a8a] text-white gap-2 px-8 py-6 text-lg">
+                                <Camera className="h-5 w-5" />
+                                Capturer
+                            </Button>
+                        </div>
+                        <canvas ref={canvasRef} className="hidden" width={640} height={480} />
+                    </div>
+                </div>
+            )}
         </div >
     );
 };
