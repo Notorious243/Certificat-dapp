@@ -316,14 +316,17 @@ const AdminPage = () => {
     };
 
     const startWebcam = async (mode = 'photo') => {
+        console.log("Starting webcam in mode:", mode);
+        setStatus({ type: 'loading', message: "Ouverture de la caméra..." });
         setWebcamMode(mode);
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             setWebcamStream(stream);
             setShowWebcam(true);
+            setStatus(null);
         } catch (err) {
             console.error("Error accessing webcam:", err);
-            alert("Impossible d'accéder à la caméra. Vérifiez les permissions.");
+            setStatus({ type: 'error', message: "Impossible d'accéder à la caméra. Vérifiez les permissions." });
         }
     };
 
@@ -351,13 +354,13 @@ const AdminPage = () => {
 
             if (webcamMode === 'photo') {
                 // Capture profile photo
-                setNewAdmin(prev => ({ ...prev, photo: dataUrl, faceIdConfigured: false })); // Reset Face ID config on new photo
+                setNewAdmin(prev => ({ ...prev, photo: dataUrl }));
                 stopWebcam();
             } else {
                 // Capture Face ID data (verify first)
                 const success = await verifyFaceId(dataUrl);
                 if (success) {
-                    setNewAdmin(prev => ({ ...prev, photo: dataUrl })); // Save photo if Face ID is configured
+                    // Note: We DO NOT overwrite 'photo' here anymore, verifying Face ID sets 'faceIdData'
                     stopWebcam();
                 }
             }
