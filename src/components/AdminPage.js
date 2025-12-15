@@ -347,8 +347,9 @@ const AdminPage = () => {
                                 .withFaceLandmarks()
                                 .withFaceDescriptor();
 
-                            if (detections) {
-                                // Visage détecté ! Capturer l'image
+                            // QUALITY CHECK: Ensure high confidence capture (Apple Style)
+                            if (detections && detections.detection.score > 0.85) {
+                                // Visage détecté avec haute précision ! Capturer l'image
                                 clearInterval(scanIntervalRef.current);
 
                                 setFaceIdScanPhase('processing');

@@ -49,7 +49,8 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     throw new Error("Aucun administrateur n'a configuré Face ID.");
                 }
 
-                const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+                // SECURITY BOOST: Threshold 0.45 (Very Strict) - Apple Style Precision
+                const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.45);
 
                 // 3. Démarrer la webcam (Optimisé pour Mobile)
                 const constraints = {
