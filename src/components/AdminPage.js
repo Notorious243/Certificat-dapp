@@ -471,24 +471,38 @@ const AdminPage = () => {
             const wasConnected = localStorage.getItem('metamaskConnected');
             const savedAccount = localStorage.getItem('metamaskAccount');
 
-            if (wasConnected === 'true' && savedAccount && window.ethereum) {
+            if (wasConnected === 'true' && window.ethereum) {
                 try {
                     const web3 = new Web3(window.ethereum);
+                    // Just check if we still have access to accounts
                     const accounts = await web3.eth.getAccounts();
 
-                    if (accounts.length > 0 && accounts[0].toLowerCase() === savedAccount.toLowerCase()) {
-                        setAccount(accounts[0]);
+                    if (accounts.length > 0) {
+                        // If saved account matches one of the authorized accounts, use it
+                        // Otherwise use the first available one
+                        const accountToUse = (savedAccount && accounts.some(a => a.toLowerCase() === savedAccount.toLowerCase()))
+                            ? savedAccount
+                            : accounts[0];
 
-                        if (ADMIN_ADDRESS && accounts[0].toLowerCase() === ADMIN_ADDRESS.toLowerCase()) {
+                        setAccount(accountToUse);
+
+                        if (ADMIN_ADDRESS && accountToUse.toLowerCase() === ADMIN_ADDRESS.toLowerCase()) {
                             setIsAdmin(true);
                             const contractInstance = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
                             setContract(contractInstance);
-                            await fetchBalance(accounts[0]);
+                            await fetchBalance(accountToUse);
                         }
                     } else {
-                        // Compte changé, nettoyer localStorage
-                        localStorage.removeItem('metamaskConnected');
-                        localStorage.removeItem('metamaskAccount');
+                        // Crucial change: user WAS connected but now we see no accounts (locked?)
+                        // Do NOT clear localStorage immediately. We keep the "connected" state flag
+                        // so that if they unlock, it might pick up, OR we just show "Disconnected"
+                        // but don't force them through the full "Connect" flow if they just need to unlock.
+                        // However, to satisfy the user request "metamask disconnects", we should probably
+                        // try to request accounts SILENTLY if possible, or just wait.
+                        // If we return here without setting account, UI shows "Not Connected".
+                        // Let's try to be smart: if no accounts, we can't force them visible without popup.
+                        // We will just leave status as is (null account), but NOT clear localStorage.
+                        console.log("MetaMask locked or disconnected. Please unlock.");
                     }
                 } catch (error) {
                     console.error("Auto-reconnect error:", error);
@@ -1037,10 +1051,11 @@ const AdminPage = () => {
 
                         const certId = result.events?.CertificatEnregistre?.returnValues?.idUnique || "0x" + Math.random().toString(16).substr(2, 64);
 
-                        // 5. Envoyer l'email
+                        // 5. Envoyer l'email avec retentative
                         if (data.email) {
                             setStatus({ type: 'loading', message: 'Certificat enregistré ! Envoi de l\'email en cours...' });
-                            try {
+
+                            const sendEmailWithRetry = async (retries = 3) => {
                                 const emailParams = {
                                     to_name: `${data.firstName} ${data.lastName}`,
                                     to_email: data.email,
@@ -1049,18 +1064,29 @@ const AdminPage = () => {
                                     issue_date: new Date().toLocaleDateString('fr-FR')
                                 };
 
-                                // REMPLACEZ CES VALEURS PAR VOS CLÉS EMAILJS
-                                // Service ID, Template ID, Public Key (User ID)
-                                await emailjs.send(
-                                    EMAILJS_CONFIG.SERVICE_ID,
-                                    EMAILJS_CONFIG.TEMPLATE_ID,
-                                    emailParams,
-                                    EMAILJS_CONFIG.PUBLIC_KEY
-                                );
+                                for (let i = 0; i < retries; i++) {
+                                    try {
+                                        await emailjs.send(
+                                            EMAILJS_CONFIG.SERVICE_ID,
+                                            EMAILJS_CONFIG.TEMPLATE_ID,
+                                            emailParams,
+                                            EMAILJS_CONFIG.PUBLIC_KEY
+                                        );
+                                        return true; // Success
+                                    } catch (err) {
+                                        console.warn(`Tentative email ${i + 1}/${retries} échouée:`, err);
+                                        if (i === retries - 1) throw err; // Throw on last failure
+                                        await new Promise(res => setTimeout(res, 2000)); // Wait 2s before retry
+                                    }
+                                }
+                            };
+
+                            try {
+                                await sendEmailWithRetry();
                                 setStatus({ type: 'success', message: 'Certificat enregistré et Email envoyé avec succès !' });
                             } catch (emailError) {
-                                console.error("Erreur lors de l'envoi de l'email:", emailError);
-                                setStatus({ type: 'success', message: 'Certificat enregistré, mais échec de l\'envoi de l\'email.' });
+                                console.error("Erreur fatale envoi email:", emailError);
+                                setStatus({ type: 'success', message: 'Certificat enregistré, mais échec de l\'envoi de l\'email (Connexion?).' });
                             }
                         } else {
                             setStatus({ type: 'success', message: 'Certificat enregistré avec succès (sans email).' });
@@ -1792,27 +1818,27 @@ const AdminPage = () => {
                                     <CardContent className="px-8 pb-8">
                                         <form onSubmit={handleAddAdmin} className="space-y-6">
                                             {/* Photo Section */}
-                                            <div className="flex flex-col items-center justify-center space-y-4 mb-6">
-                                                <div className="relative">
-                                                    <div className="h-24 w-24 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden">
+                                            <div className="flex flex-col md:flex-row items-center justify-center space-y-4 md:space-y-0 md:space-x-6 mb-8 p-6 bg-slate-50/50 rounded-2xl border border-slate-100">
+                                                <div className="relative group">
+                                                    <div className="h-32 w-32 rounded-full bg-white border-4 border-white shadow-xl flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-105">
                                                         {newAdmin.photo ? (
                                                             <img src={newAdmin.photo} alt="Preview" className="h-full w-full object-cover" />
                                                         ) : (
-                                                            <Users className="h-10 w-10 text-slate-400" />
+                                                            <Users className="h-12 w-12 text-slate-300" />
                                                         )}
                                                     </div>
                                                     {newAdmin.photo && (
                                                         <button
                                                             type="button"
                                                             onClick={() => setNewAdmin({ ...newAdmin, photo: '' })}
-                                                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                                                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 transition-colors shadow-sm"
                                                         >
-                                                            <X className="h-3 w-3" />
+                                                            <X className="h-4 w-4" />
                                                         </button>
                                                     )}
                                                 </div>
-                                                <div className="flex gap-3">
-                                                    <div className="relative">
+                                                <div className="flex flex-col gap-3 w-full md:w-auto">
+                                                    <div className="relative w-full">
                                                         <input
                                                             type="file"
                                                             accept="image/*"
@@ -1822,20 +1848,20 @@ const AdminPage = () => {
                                                         />
                                                         <Label
                                                             htmlFor="photo-upload"
-                                                            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors text-sm font-medium text-slate-700"
+                                                            className="flex items-center justify-center gap-2 px-6 py-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-all text-sm font-semibold text-slate-700 shadow-sm w-full md:w-48"
                                                         >
                                                             <Upload className="h-4 w-4" />
-                                                            Importer
+                                                            Importer Photo
                                                         </Label>
                                                     </div>
                                                     <Button
                                                         type="button"
                                                         variant="outline"
                                                         onClick={startWebcam}
-                                                        className="flex items-center gap-2"
+                                                        className="flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 font-semibold shadow-sm w-full md:w-48"
                                                     >
                                                         <Camera className="h-4 w-4" />
-                                                        Webcam
+                                                        Utiliser Webcam
                                                     </Button>
                                                 </div>
                                             </div>
