@@ -823,7 +823,9 @@ const AdminPage = () => {
 
             const width = doc.internal.pageSize.getWidth();
             const height = doc.internal.pageSize.getHeight();
-            const uniqueId = "ID-" + Math.random().toString(36).substr(2, 9).toUpperCase();
+            // Utiliser le hash du contenu comme ID Unique pour qu'il corresponde à la blockchain
+            // Cela permet à la vérification par ID de fonctionner (LandingPage attend le hash du contenu ou l'ID hex)
+            const uniqueId = generateCertificateHash(data);
 
             // --- DESIGN ---
             // Background White
