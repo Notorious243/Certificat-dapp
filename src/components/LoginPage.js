@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Shield, ArrowRight, Lock } from 'lucide-react';
+import { Shield, ArrowRight, Lock, ScanFace } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -162,9 +162,7 @@ const LoginPage = () => {
                                 onClick={() => setShowFaceLogin(true)}
                                 className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-colors flex items-center justify-center gap-2"
                             >
-                                <div className="h-5 w-5 rounded-md border-2 border-slate-400 flex items-center justify-center">
-                                    <div className="h-2 w-2 bg-slate-400 rounded-full" />
-                                </div>
+                                <ScanFace className="w-5 h-5 mr-2" />
                                 Se connecter avec Face ID
                             </Button>
 
