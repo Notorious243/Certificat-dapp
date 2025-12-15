@@ -473,36 +473,31 @@ const AdminPage = () => {
 
             if (wasConnected === 'true' && window.ethereum) {
                 try {
-                    const web3 = new Web3(window.ethereum);
-                    // Just check if we still have access to accounts
-                    const accounts = await web3.eth.getAccounts();
+                    try {
+                        // FORCE connection attempt if we were connected
+                        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
 
-                    if (accounts.length > 0) {
-                        // If saved account matches one of the authorized accounts, use it
-                        // Otherwise use the first available one
-                        const accountToUse = (savedAccount && accounts.some(a => a.toLowerCase() === savedAccount.toLowerCase()))
-                            ? savedAccount
-                            : accounts[0];
+                        if (accounts.length > 0) {
+                            // If saved account matches one of the authorized accounts, use it
+                            // Otherwise use the first available one
+                            const accountToUse = (savedAccount && accounts.some(a => a.toLowerCase() === savedAccount.toLowerCase()))
+                                ? savedAccount
+                                : accounts[0];
 
-                        setAccount(accountToUse);
+                            setAccount(accountToUse);
 
-                        if (ADMIN_ADDRESS && accountToUse.toLowerCase() === ADMIN_ADDRESS.toLowerCase()) {
-                            setIsAdmin(true);
-                            const contractInstance = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
-                            setContract(contractInstance);
-                            await fetchBalance(accountToUse);
+                            if (ADMIN_ADDRESS && accountToUse.toLowerCase() === ADMIN_ADDRESS.toLowerCase()) {
+                                setIsAdmin(true);
+                                const web3 = new Web3(window.ethereum); // Create web3 instance here as it was missing in this specific scope if we remove the previous lines
+                                const contractInstance = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
+                                setContract(contractInstance);
+                                await fetchBalance(accountToUse);
+                            }
                         }
-                    } else {
-                        // Crucial change: user WAS connected but now we see no accounts (locked?)
-                        // Do NOT clear localStorage immediately. We keep the "connected" state flag
-                        // so that if they unlock, it might pick up, OR we just show "Disconnected"
-                        // but don't force them through the full "Connect" flow if they just need to unlock.
-                        // However, to satisfy the user request "metamask disconnects", we should probably
-                        // try to request accounts SILENTLY if possible, or just wait.
-                        // If we return here without setting account, UI shows "Not Connected".
-                        // Let's try to be smart: if no accounts, we can't force them visible without popup.
-                        // We will just leave status as is (null account), but NOT clear localStorage.
-                        console.log("MetaMask locked or disconnected. Please unlock.");
+                    } catch (error) {
+                        console.error("Auto-reconnect error:", error);
+                        // If user rejects or error, we might want to clear storage or just stay disconnected
+                        // But for "persistence", we just log it.
                     }
                 } catch (error) {
                     console.error("Auto-reconnect error:", error);
