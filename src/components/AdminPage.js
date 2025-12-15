@@ -283,38 +283,46 @@ const AdminPage = () => {
         }
 
         try {
-            setStatus({ type: 'loading', message: "Vérification de la compatibilité Face ID..." });
+            setStatus({ type: 'loading', message: "Chargement de l'intelligence artificielle..." });
 
-            // Load required models
-            await Promise.all([
-                faceapi.loadSsdMobilenetv1Model('/models'),
-                faceapi.loadFaceLandmarkModel('/models'),
-                faceapi.loadFaceRecognitionModel('/models')
-            ]);
+            // Check if models are already loaded to speed up
+            if (!faceapi.nets.ssdMobilenetv1.params) {
+                await faceapi.loadSsdMobilenetv1Model('/models');
+            }
+            if (!faceapi.nets.faceLandmark68Net.params) {
+                await faceapi.loadFaceLandmarkModel('/models');
+            }
+            if (!faceapi.nets.faceRecognitionNet.params) {
+                await faceapi.loadFaceRecognitionModel('/models');
+            }
+
+            setStatus({ type: 'loading', message: "Analyse biométrique en cours..." });
 
             // Create an image element to detect face
             const img = new Image();
             img.src = photoToVerify;
             await new Promise(resolve => img.onload = resolve);
 
-            // Detect face
-            const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+            // Detect face with slightly lower confidence threshold for better UX
+            const detections = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+                .withFaceLandmarks()
+                .withFaceDescriptor();
 
             if (detections) {
                 setNewAdmin(prev => ({ ...prev, faceIdConfigured: true, faceIdData: photoToVerify }));
-                setStatus({ type: 'success', message: "Face ID configuré avec succès ! Visage détecté." });
+                setStatus({ type: 'success', message: "Succès ! Visage enregistré et sécurisé." });
                 return true;
             } else {
                 setNewAdmin(prev => ({ ...prev, faceIdConfigured: false, faceIdData: '' }));
-                setStatus({ type: 'error', message: "Aucun visage détecté. Essayez de mieux vous cadrer." });
+                setStatus({ type: 'error', message: "Échec : Aucun visage net détecté. Rapprochez-vous ou éclairez votre visage." });
                 return false;
             }
         } catch (error) {
-            console.error("Erreur Face ID:", error);
-            setStatus({ type: 'error', message: "Erreur lors de la configuration Face ID." });
+            console.error("Erreur Face ID détaillée:", error);
+            setStatus({ type: 'error', message: `Erreur technique : ${error.message || "Problème IA"}` });
             return false;
         } finally {
-            setTimeout(() => setStatus(null), 3000);
+            setTimeout(() => setStatus(null), 4000);
         }
     };
 
@@ -1975,8 +1983,8 @@ const AdminPage = () => {
                                                             startWebcam('faceId');
                                                         }}
                                                         className={`flex items-center justify-center gap-2 px-6 py-6 rounded-xl border-slate-200 font-semibold shadow-sm w-full md:w-48 transition-all ${newAdmin.faceIdConfigured
-                                                                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                                                                : 'bg-blue-600 text-white hover:bg-blue-700 border-blue-600'
+                                                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                                                            : 'bg-blue-600 text-white hover:bg-blue-700 border-blue-600'
                                                             }`}
                                                     >
                                                         <ScanFace className="h-4 w-4" />
