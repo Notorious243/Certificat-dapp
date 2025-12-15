@@ -170,13 +170,19 @@ const AdminPage = () => {
         }
         return defaultAdmins;
     });
-    const [newAdmin, setNewAdmin] = useState({ firstName: '', lastName: '', username: '', password: '', photo: '', faceIdData: '' });
+    const [newAdmin, setNewAdmin] = useState({ firstName: '', lastName: '', username: '', password: '', photo: '', faceIdData: '', faceIdConfigured: false });
     const [editingAdmin, setEditingAdmin] = useState(null);
     const [showWebcam, setShowWebcam] = useState(false);
     const [webcamStream, setWebcamStream] = useState(null);
     const [webcamMode, setWebcamMode] = useState('photo'); // 'photo' or 'faceId'
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
+
+    // Face ID scanning states
+    const [faceIdScanPhase, setFaceIdScanPhase] = useState('idle'); // idle, initializing, scanning, processing, success, error
+    const [scanProgress, setScanProgress] = useState(0);
+    const [scanMessage, setScanMessage] = useState('');
+    const scanIntervalRef = useRef(null);
 
     const [showPassword, setShowPassword] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
@@ -239,9 +245,24 @@ const AdminPage = () => {
             localStorage.setItem('registeredAdmins', JSON.stringify(updatedAdmins));
             setStatus({ type: 'success', message: 'Nouvel administrateur ajouté avec succès.' });
         }
-        setNewAdmin({ firstName: '', lastName: '', username: '', password: '', photo: '' });
+        setNewAdmin({ firstName: '', lastName: '', username: '', password: '', photo: '', faceIdData: '', faceIdConfigured: false });
         setShowPassword(false);
         setTimeout(() => setStatus(null), 3000);
+    };
+
+    // Fonction pour réinitialiser tous les admins aux valeurs par défaut
+    const handleResetAdmins = () => {
+        if (window.confirm('Êtes-vous sûr de vouloir réinitialiser tous les administrateurs ? Cette action supprimera tous les Face ID configurés.')) {
+            const defaultAdmins = [
+                { id: '1', firstName: 'Michel', lastName: 'Maleka', username: 'Michel', password: 'Michel7', status: 'Active', photo: '/images/michel.png', faceIdConfigured: false, faceIdData: '' },
+                { id: '2', firstName: 'Fiston', lastName: 'Kalonda', username: 'Fiston', password: 'Fiston7', status: 'Active', photo: '/images/fiston.jpg', faceIdConfigured: false, faceIdData: '' },
+                { id: '3', firstName: 'Gilva', lastName: 'Kabongo', username: 'Gilva', password: 'Gilva7', status: 'Active', photo: '/images/gilva.jpg', faceIdConfigured: false, faceIdData: '' }
+            ];
+            setAdmins(defaultAdmins);
+            localStorage.setItem('registeredAdmins', JSON.stringify(defaultAdmins));
+            setStatus({ type: 'success', message: 'Administrateurs réinitialisés avec succès !' });
+            setTimeout(() => setStatus(null), 3000);
+        }
     };
 
     const handleEditAdmin = (admin) => {
@@ -279,117 +300,173 @@ const AdminPage = () => {
         window.location.href = '/login';
     };
 
-    const verifyFaceId = async (imageData = null) => {
-        const photoToVerify = imageData || newAdmin.photo;
+    // ===== FACE ID STYLE IPHONE - NOUVELLE IMPLÉMENTATION =====
 
-        if (!photoToVerify) {
-            setStatus({ type: 'error', message: "Veuillez d'abord prendre une photo." });
-            return false;
-        }
+    // Fonction de scan Face ID automatique style iPhone
+    const startFaceIdScan = async () => {
+        setFaceIdScanPhase('initializing');
+        setScanProgress(0);
+        setScanMessage('Initialisation de Face ID...');
 
         try {
-            setStatus({ type: 'loading', message: "Chargement des modèles IA (1/2)..." });
-
-            // Robust loading: Just load them. Library handles caching.
+            // 1. Charger les modèles IA
             await Promise.all([
                 faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
                 faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                 faceapi.nets.faceRecognitionNet.loadFromUri('/models')
             ]);
 
-            setStatus({ type: 'loading', message: "Analyse du visage en cours (2/2)..." });
+            setScanProgress(20);
+            setScanMessage('Positionnez votre visage dans le cadre...');
+            setFaceIdScanPhase('scanning');
 
-            // Create an image element to detect face
-            const img = new Image();
-            img.src = photoToVerify;
-            await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
-            });
+            // 2. Démarrer le scan en temps réel
+            let scanAttempts = 0;
+            const maxAttempts = 50; // ~10 secondes max
 
-            // Detect face with slightly lower confidence threshold for better UX
-            const detections = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
-                .withFaceLandmarks()
-                .withFaceDescriptor();
+            scanIntervalRef.current = setInterval(async () => {
+                scanAttempts++;
 
-            if (detections) {
-                console.log("Face detected:", detections);
-                setNewAdmin(prev => ({ ...prev, faceIdConfigured: true, faceIdData: photoToVerify }));
-                setStatus({ type: 'success', message: "Succès ! Visage identifié et sécurisé." });
-                return true;
-            } else {
-                console.warn("No face detected");
-                setNewAdmin(prev => ({ ...prev, faceIdConfigured: false, faceIdData: '' }));
-                setStatus({ type: 'error', message: "Aucun visage détecté. Assurez-vous d'être bien éclairé." });
-                return false;
-            }
+                if (scanAttempts > maxAttempts) {
+                    clearInterval(scanIntervalRef.current);
+                    setFaceIdScanPhase('error');
+                    setScanMessage('Temps écoulé. Réessayez.');
+                    return;
+                }
+
+                // Animation de progression
+                setScanProgress(prev => Math.min(prev + 1.5, 90));
+
+                if (videoRef.current && canvasRef.current) {
+                    const video = videoRef.current;
+
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                        try {
+                            // Détecter le visage en temps réel
+                            const detections = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+                                .withFaceLandmarks()
+                                .withFaceDescriptor();
+
+                            if (detections) {
+                                // Visage détecté ! Capturer l'image
+                                clearInterval(scanIntervalRef.current);
+
+                                setFaceIdScanPhase('processing');
+                                setScanProgress(95);
+                                setScanMessage('Visage détecté ! Traitement...');
+
+                                // Capturer la photo
+                                const canvas = canvasRef.current;
+                                canvas.width = video.videoWidth;
+                                canvas.height = video.videoHeight;
+                                const context = canvas.getContext('2d');
+                                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                const faceDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+                                // Succès !
+                                setTimeout(() => {
+                                    setFaceIdScanPhase('success');
+                                    setScanProgress(100);
+                                    setScanMessage('Face ID enregistré avec succès !');
+
+                                    // Sauvegarder le Face ID
+                                    setNewAdmin(prev => ({
+                                        ...prev,
+                                        faceIdConfigured: true,
+                                        faceIdData: faceDataUrl
+                                    }));
+
+                                    // Fermer après animation de succès
+                                    setTimeout(() => {
+                                        stopWebcam();
+                                        setFaceIdScanPhase('idle');
+                                        setScanProgress(0);
+                                        setStatus({ type: 'success', message: '✅ Face ID configuré avec succès !' });
+                                        setTimeout(() => setStatus(null), 3000);
+                                    }, 2000);
+                                }, 500);
+                            } else {
+                                // Pas de visage détecté, mettre à jour le message
+                                const messages = [
+                                    'Positionnez votre visage dans le cadre...',
+                                    'Regardez directement la caméra...',
+                                    'Assurez-vous d\'être bien éclairé...',
+                                    'Gardez votre visage immobile...'
+                                ];
+                                setScanMessage(messages[Math.floor(scanAttempts / 10) % messages.length]);
+                            }
+                        } catch (err) {
+                            console.error('Scan error:', err);
+                        }
+                    }
+                }
+            }, 200);
+
         } catch (error) {
-            console.error("Erreur Face ID détaillée:", error);
-            setStatus({ type: 'error', message: `Erreur interne IA : ${error.message}` });
-            return false;
-        } finally {
-            // Keep success status visible longer
-            setTimeout(() => setStatus(null), 5000);
+            console.error('Face ID init error:', error);
+            setFaceIdScanPhase('error');
+            setScanMessage('Erreur d\'initialisation. Réessayez.');
         }
     };
 
     const startWebcam = async (mode = 'photo') => {
-        // DEBUG: Force alert to confirm click
         console.log("Starting webcam in mode:", mode);
-        setStatus({ type: 'loading', message: "Ouverture de la caméra..." });
         setWebcamMode(mode);
+        setFaceIdScanPhase('idle');
+        setScanProgress(0);
+
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                }
+            });
             setWebcamStream(stream);
             setShowWebcam(true);
-            setStatus(null);
+
+            // Si mode Face ID, démarrer le scan automatiquement après un délai
+            if (mode === 'faceId') {
+                setTimeout(() => {
+                    startFaceIdScan();
+                }, 1000);
+            }
         } catch (err) {
             console.error("Error accessing webcam:", err);
             setStatus({ type: 'error', message: "Impossible d'accéder à la caméra. Vérifiez les permissions." });
         }
     };
 
-    // Corrected Capture Photo function
+    // Capture Photo pour le mode photo simple
     const capturePhoto = async () => {
         if (videoRef.current && canvasRef.current) {
             const video = videoRef.current;
             const canvas = canvasRef.current;
 
-            // Ensure video dimensions are available
             if (video.videoWidth === 0 || video.videoHeight === 0) {
                 console.warn("Video dimensions not ready yet");
                 return;
             }
 
-            // Set canvas size to match video
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
 
             const context = canvas.getContext('2d');
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Get data URL
             const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
 
             if (webcamMode === 'photo') {
-                setStatus({ type: 'loading', message: "Photo de profil capturée..." });
-                // Capture profile photo
                 setNewAdmin(prev => ({ ...prev, photo: dataUrl }));
-                setTimeout(stopWebcam, 500); // Small delay for UX
-            } else {
-                setStatus({ type: 'loading', message: "Traitement de l'image..." });
-                // Capture Face ID data (verify first)
-                const success = await verifyFaceId(dataUrl);
-                if (success) {
-                    // Note: We DO NOT overwrite 'photo' here anymore, verifying Face ID sets 'faceIdData'
-                    stopWebcam();
-                }
+                stopWebcam();
+                setStatus({ type: 'success', message: 'Photo capturée !' });
+                setTimeout(() => setStatus(null), 2000);
             }
         }
     };
 
     // Fix Black Screen: Bind stream to video element when modal appears
-    // Added retry logic to handle race condition where video element may not be mounted yet
     useEffect(() => {
         let retryCount = 0;
         const maxRetries = 10;
@@ -401,7 +478,6 @@ const AdminPage = () => {
                     videoRef.current.onloadedmetadata = () => {
                         videoRef.current.play().catch(err => {
                             console.error("Video play error:", err);
-                            // Try again on play error
                             if (retryCount < maxRetries) {
                                 retryCount++;
                                 setTimeout(bindStream, 100);
@@ -412,19 +488,16 @@ const AdminPage = () => {
                     console.error("Error binding stream:", err);
                 }
             } else if (showWebcam && retryCount < maxRetries) {
-                // Video element not ready yet, retry
                 retryCount++;
                 setTimeout(bindStream, 100);
             }
         };
 
         if (showWebcam && webcamStream) {
-            // Small delay to ensure DOM is updated
             setTimeout(bindStream, 50);
         }
 
         return () => {
-            // Cleanup
             if (videoRef.current) {
                 videoRef.current.onloadedmetadata = null;
             }
@@ -432,11 +505,19 @@ const AdminPage = () => {
     }, [showWebcam, webcamStream]);
 
     const stopWebcam = () => {
+        // Nettoyer l'intervalle de scan
+        if (scanIntervalRef.current) {
+            clearInterval(scanIntervalRef.current);
+            scanIntervalRef.current = null;
+        }
+
         if (webcamStream) {
             webcamStream.getTracks().forEach(track => track.stop());
             setWebcamStream(null);
         }
         setShowWebcam(false);
+        setFaceIdScanPhase('idle');
+        setScanProgress(0);
     };
 
 
@@ -1966,11 +2047,23 @@ const AdminPage = () => {
                                                     </CardDescription>
                                                 </div>
                                             </div>
-                                            {editingAdmin && (
-                                                <Button type="button" variant="outline" onClick={handleCancelEdit}>
-                                                    Annuler
-                                                </Button>
-                                            )}
+                                            <div className="flex gap-2">
+                                                {!editingAdmin && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                        onClick={handleResetAdmins}
+                                                    >
+                                                        <RefreshCw className="mr-2 h-4 w-4" /> Réinitialiser
+                                                    </Button>
+                                                )}
+                                                {editingAdmin && (
+                                                    <Button type="button" variant="outline" onClick={handleCancelEdit}>
+                                                        Annuler
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </div>
                                     </CardHeader>
                                     <CardContent className="px-8 pb-8">
@@ -2112,59 +2205,7 @@ const AdminPage = () => {
                                                 {editingAdmin ? 'Modifier l\'administrateur' : 'Ajouter Administrateur'}
                                             </Button>
 
-                                            {/* Backup for Cross-Device Support */}
-                                            <div className="mt-8 pt-6 border-t border-gray-100">
-                                                <h4 className="text-sm font-semibold text-gray-500 mb-4">Synchronisation Multi-Appareils</h4>
-                                                <div className="flex gap-4">
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        onClick={() => {
-                                                            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(admins));
-                                                            const downloadAnchorNode = document.createElement('a');
-                                                            downloadAnchorNode.setAttribute("href", dataStr);
-                                                            downloadAnchorNode.setAttribute("download", "admin_config.json");
-                                                            document.body.appendChild(downloadAnchorNode);
-                                                            downloadAnchorNode.click();
-                                                            downloadAnchorNode.remove();
-                                                        }}
-                                                    >
-                                                        <Download className="mr-2 h-4 w-4" /> Sauvegarder Config
-                                                    </Button>
-                                                    <div className="relative">
-                                                        <input
-                                                            type="file"
-                                                            accept=".json"
-                                                            onChange={(e) => {
-                                                                const file = e.target.files[0];
-                                                                if (!file) return;
-                                                                const reader = new FileReader();
-                                                                reader.onload = (event) => {
-                                                                    try {
-                                                                        const imported = JSON.parse(event.target.result);
-                                                                        if (Array.isArray(imported)) {
-                                                                            setAdmins(imported);
-                                                                            localStorage.setItem('registeredAdmins', JSON.stringify(imported));
-                                                                            setStatus({ type: 'success', message: "Configuration importée avec succès !" });
-                                                                            setTimeout(() => setStatus(null), 3000);
-                                                                        }
-                                                                    } catch (err) {
-                                                                        setStatus({ type: 'error', message: "Fichier invalide." });
-                                                                    }
-                                                                };
-                                                                reader.readAsText(file);
-                                                            }}
-                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                        />
-                                                        <Button type="button" variant="outline">
-                                                            <Upload className="mr-2 h-4 w-4" /> Importer Config
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                                <p className="text-xs text-gray-400 mt-2">
-                                                    Pour utiliser Face ID sur un autre appareil, sauvegardez ce fichier et importez-le sur l'autre appareil.
-                                                </p>
-                                            </div>
+
                                         </form>
                                     </CardContent>
                                 </Card>
@@ -2176,33 +2217,200 @@ const AdminPage = () => {
                 </main>
             </motion.div>
 
-            {/* Webcam Modal Overlay - MOVED OUTSIDE MOTION CONTEXT */}
+            {/* Modal Webcam / Face ID Style iPhone */}
             {showWebcam && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4 shadow-2xl">
-                        <div className="flex justify-between items-center">
-                            <h3 className="font-bold text-lg">Prendre une photo ({webcamMode === 'photo' ? 'Profil' : 'Biométrie'})</h3>
-                            <Button type="button" variant="ghost" size="icon" onClick={stopWebcam}>
-                                <X className="h-5 w-5" />
-                            </Button>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4">
+                    {webcamMode === 'faceId' ? (
+                        /* === MODAL FACE ID STYLE IPHONE === */
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="relative w-full max-w-md mx-auto flex flex-col items-center"
+                        >
+                            {/* Header */}
+                            <div className="mb-8 text-center space-y-3">
+                                <motion.div
+                                    initial={{ y: -20, opacity: 0 }}
+                                    animate={{ y: 0, opacity: 1 }}
+                                    className={`inline-flex items-center justify-center p-4 rounded-full mb-4 backdrop-blur-md ${faceIdScanPhase === 'success' ? 'bg-green-500/20' :
+                                        faceIdScanPhase === 'error' ? 'bg-red-500/20' :
+                                            'bg-white/10'
+                                        }`}
+                                >
+                                    <ScanFace className={`w-10 h-10 ${faceIdScanPhase === 'success' ? 'text-green-400' :
+                                        faceIdScanPhase === 'error' ? 'text-red-400' :
+                                            'text-white'
+                                        }`} />
+                                </motion.div>
+                                <h2 className="text-2xl font-bold text-white tracking-tight">
+                                    {faceIdScanPhase === 'success' ? 'Face ID Enregistré !' :
+                                        faceIdScanPhase === 'error' ? 'Échec du Scan' :
+                                            'Configuration Face ID'}
+                                </h2>
+                                <p className="text-sm text-white/70">
+                                    {scanMessage || 'Préparation de la caméra...'}
+                                </p>
+                            </div>
+
+                            {/* Scanner Container - Style iPhone */}
+                            <div className="relative w-72 h-72">
+                                {/* Outer Ring Animation */}
+                                <motion.div
+                                    animate={{
+                                        rotate: faceIdScanPhase === 'scanning' ? 360 : 0,
+                                        borderColor: faceIdScanPhase === 'success' ? '#22c55e' :
+                                            faceIdScanPhase === 'error' ? '#ef4444' :
+                                                '#3b82f6'
+                                    }}
+                                    transition={{
+                                        rotate: { duration: 2, repeat: Infinity, ease: 'linear' },
+                                        borderColor: { duration: 0.3 }
+                                    }}
+                                    className="absolute -inset-3 rounded-full border-4 border-dashed opacity-50"
+                                    style={{ borderColor: faceIdScanPhase === 'success' ? '#22c55e' : faceIdScanPhase === 'error' ? '#ef4444' : '#3b82f6' }}
+                                />
+
+                                {/* Video Container */}
+                                <div className="absolute inset-0 rounded-full overflow-hidden bg-black border-4 border-white/20 shadow-2xl">
+                                    <video
+                                        ref={videoRef}
+                                        autoPlay
+                                        playsInline
+                                        muted
+                                        className={`w-full h-full object-cover transform scale-125 transition-all duration-500 ${faceIdScanPhase === 'success' ? 'blur-sm opacity-60' : ''
+                                            }`}
+                                        style={{ transform: 'scaleX(-1) scale(1.3)' }}
+                                    />
+
+                                    {/* Scan Overlay Animation */}
+                                    {faceIdScanPhase === 'scanning' && (
+                                        <motion.div
+                                            animate={{
+                                                top: ['-50%', '150%'],
+                                            }}
+                                            transition={{
+                                                duration: 2,
+                                                repeat: Infinity,
+                                                ease: 'easeInOut'
+                                            }}
+                                            className="absolute left-0 right-0 h-1/3 bg-gradient-to-b from-transparent via-blue-500/30 to-transparent"
+                                        />
+                                    )}
+
+                                    {/* Success Overlay */}
+                                    {faceIdScanPhase === 'success' && (
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.5 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            className="absolute inset-0 flex items-center justify-center bg-green-500/30"
+                                        >
+                                            <motion.div
+                                                initial={{ scale: 0 }}
+                                                animate={{ scale: 1 }}
+                                                transition={{ type: 'spring', delay: 0.2 }}
+                                                className="bg-green-500 rounded-full p-6 shadow-xl"
+                                            >
+                                                <CheckCircle className="w-16 h-16 text-white" />
+                                            </motion.div>
+                                        </motion.div>
+                                    )}
+
+                                    {/* Error Overlay */}
+                                    {faceIdScanPhase === 'error' && (
+                                        <motion.div
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            className="absolute inset-0 flex items-center justify-center bg-red-500/30"
+                                        >
+                                            <div className="bg-red-500 rounded-full p-6 shadow-xl">
+                                                <X className="w-16 h-16 text-white" />
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </div>
+
+                                {/* Progress Ring */}
+                                <svg className="absolute -inset-1 w-[calc(100%+8px)] h-[calc(100%+8px)]" style={{ transform: 'rotate(-90deg)' }}>
+                                    <circle
+                                        cx="50%"
+                                        cy="50%"
+                                        r="48%"
+                                        fill="none"
+                                        stroke="rgba(255,255,255,0.1)"
+                                        strokeWidth="4"
+                                    />
+                                    <motion.circle
+                                        cx="50%"
+                                        cy="50%"
+                                        r="48%"
+                                        fill="none"
+                                        stroke={faceIdScanPhase === 'success' ? '#22c55e' : faceIdScanPhase === 'error' ? '#ef4444' : '#3b82f6'}
+                                        strokeWidth="4"
+                                        strokeLinecap="round"
+                                        initial={{ pathLength: 0 }}
+                                        animate={{ pathLength: scanProgress / 100 }}
+                                        transition={{ duration: 0.3 }}
+                                        style={{
+                                            strokeDasharray: '100%',
+                                            strokeDashoffset: `${100 - scanProgress}%`
+                                        }}
+                                    />
+                                </svg>
+                            </div>
+
+                            {/* Progress Text */}
+                            <div className="mt-6 text-center">
+                                <span className="text-3xl font-bold text-white">{Math.round(scanProgress)}%</span>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="mt-8 flex gap-4">
+                                {faceIdScanPhase === 'error' && (
+                                    <Button
+                                        onClick={() => startFaceIdScan()}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full"
+                                    >
+                                        Réessayer
+                                    </Button>
+                                )}
+                                <Button
+                                    variant="ghost"
+                                    className="text-white/60 hover:text-white hover:bg-white/10 rounded-full px-8"
+                                    onClick={stopWebcam}
+                                >
+                                    Annuler
+                                </Button>
+                            </div>
+
+                            <canvas ref={canvasRef} className="hidden" width={640} height={480} />
+                        </motion.div>
+                    ) : (
+                        /* === MODAL PHOTO SIMPLE === */
+                        <div className="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4 shadow-2xl">
+                            <div className="flex justify-between items-center">
+                                <h3 className="font-bold text-lg">Prendre une photo de profil</h3>
+                                <Button type="button" variant="ghost" size="icon" onClick={stopWebcam}>
+                                    <X className="h-5 w-5" />
+                                </Button>
+                            </div>
+                            <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                    className="w-full h-full object-cover transform scale-x-[-1]"
+                                />
+                            </div>
+                            <div className="flex justify-center">
+                                <Button type="button" onClick={capturePhoto} className="bg-[#1e3a8a] text-white gap-2 px-8 py-6 text-lg rounded-xl">
+                                    <Camera className="h-5 w-5" />
+                                    Capturer
+                                </Button>
+                            </div>
+                            <canvas ref={canvasRef} className="hidden" width={640} height={480} />
                         </div>
-                        <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
-                            <video
-                                ref={videoRef}
-                                autoPlay
-                                playsInline
-                                muted
-                                className="w-full h-full object-cover transform scale-x-[-1]"
-                            />
-                        </div>
-                        <div className="flex justify-center">
-                            <Button type="button" onClick={capturePhoto} className="bg-[#1e3a8a] text-white gap-2 px-8 py-6 text-lg">
-                                <Camera className="h-5 w-5" />
-                                Capturer
-                            </Button>
-                        </div>
-                        <canvas ref={canvasRef} className="hidden" width={640} height={480} />
-                    </div>
+                    )}
                 </div>
             )}
         </div >
