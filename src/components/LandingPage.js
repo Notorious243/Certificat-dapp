@@ -60,7 +60,7 @@ const LandingPage = () => {
         { name: "Accueil", link: "#accueil" },
         { name: "A propos", link: "#apropos" },
         { name: "Verification", link: "#verification" },
-        { name: "FAQ", link: "#faqs" },
+        { name: "Faq", link: "#faqs" },
     ];
 
     const verifyCertificate = async (idToVerify) => {
@@ -850,7 +850,7 @@ const LandingPage = () => {
                             },
                             {
                                 question: "Que faire si je perds le hash (ID) de mon certificat ?",
-                                answer: "Le hash est unique est irrécupérable s'il n'est pas sauvegardé. Cependant, l'administrateur peut retrouver le certificat via la liste des enregistrements sur la blockchain."
+                                answer: "L'identifiant unique est irrécupérable s'il n'est pas sauvegardé et que vous ne l'avez plus. Veuillez contacter l'administrateur."
                             }
                         ].map((faq, index) => (
                             <motion.div

@@ -60,9 +60,9 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 failedAttemptsRef.current = 0;
                 pendingAdminRef.current = null;
 
-                // 1. Charger les modèles
+                // 1. Charger les modèles (Optimized for Mobile: TinyFaceDetector)
                 await Promise.all([
-                    faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
+                    faceapi.nets.tinyFaceDetector.loadFromUri('/models'), // Lighter detector
                     faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                     faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
                     faceapi.nets.faceExpressionNet.loadFromUri('/models')
@@ -111,12 +111,14 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 console.error("FaceLogin Error:", err);
                 if (isMounted) {
                     setLoadingState('error');
-                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        setScanMessage("Accès caméra refusé");
-                    } else {
-                        setScanMessage("Erreur Système");
-                    }
-                    setTimeout(() => shutdown(), 3000);
+                    let msg = "Erreur Système";
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') msg = "Accès caméra refusé";
+                    else if (err.message.includes("Aucun administrateur")) msg = "Face ID non configuré";
+                    else if (err.message) msg = err.message; // SHOW ACTUAL ERROR FOR DEBUGGING
+
+                    console.error("DEBUG FACE ID ERROR:", err); // Ensure it's in console too
+                    setScanMessage(msg);
+                    setTimeout(() => shutdown(), 5000); // Give user time to read
                 }
                 setIsLoading(false);
             }
@@ -140,21 +142,32 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
     const loadLabeledImages = async () => {
         const labeledDescriptors = [];
         const activeAdmins = adminAccounts.filter(a => a.status === 'Active' && a.faceIdConfigured && a.faceIdData);
+
         for (const admin of activeAdmins) {
             try {
                 if (admin.faceIdData) {
                     const img = new Image();
                     img.crossOrigin = "anonymous";
-                    img.src = admin.faceIdData;
-                    await new Promise((resolve) => { img.onload = resolve; });
-                    const detections = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                        img.src = admin.faceIdData;
+                        // Timeout if image takes too long (e.g. corrupt data)
+                        setTimeout(() => reject(new Error("Image load timeout")), 2000);
+                    });
+
+                    // Use TinyFaceDetectorOptions for consistency and speed
+                    const detections = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
                         .withFaceLandmarks()
                         .withFaceDescriptor();
                     if (detections) {
                         labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]));
                     }
                 }
-            } catch (err) { }
+            } catch (err) {
+                console.warn(`Failed to process face for admin ${admin.username}:`, err);
+            }
         }
         return labeledDescriptors;
     };
@@ -209,7 +222,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
             }
 
             try {
-                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+                const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
                 const detections = await faceapi.detectAllFaces(videoRef.current, options)
                     .withFaceLandmarks()
                     .withFaceDescriptors()
@@ -350,7 +363,9 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                             <video
                                 ref={videoRef}
                                 muted
+                                autoPlay
                                 playsInline
+                                webkit-playsinline="true"
                                 className={`w-full h-full object-cover transform scale-125 transition-transform duration-700 ${loadingState === 'success' ? 'grayscale-0' : 'grayscale-[20%]'
                                     }`}
                             />
@@ -358,7 +373,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     </motion.div>
 
                     {/* STATUS MESSAGE (Minimalist) */}
-                    <div className="mt-8 h-8">
+                    <div className="mt-8 h-8 px-4 text-center">
                         <AnimatePresence mode='wait'>
                             {scanMessage && (
                                 <motion.p
@@ -366,7 +381,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -10 }}
-                                    className={`text-sm font-medium tracking-wide ${loadingState === 'failure_moment' || loadingState === 'locked' ? 'text-red-400' :
+                                    className={`text-sm font-medium tracking-wide break-words ${loadingState === 'failure_moment' || loadingState === 'locked' || loadingState === 'error' ? 'text-red-400' :
                                         loadingState === 'success' ? 'text-green-400' :
                                             'text-white/50'
                                         }`}
