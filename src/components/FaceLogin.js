@@ -146,10 +146,21 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
         for (const admin of activeAdmins) {
             try {
                 if (admin.faceIdData) {
-                    // Validate Data URI format
+                    // RIGOROUS DATA VALIDATION
+                    // 1. Check Header
                     if (!admin.faceIdData.startsWith('data:image')) {
-                        console.warn(`Skipping admin ${admin.username}: Invalid faceIdData format`);
+                        console.warn(`Skipping admin ${admin.username}: Invalid Data URI header`);
                         continue;
+                    }
+
+                    // 2. Check Base64 Integrity (The "String did not match" fix)
+                    try {
+                        const base64Data = admin.faceIdData.split(',')[1];
+                        if (!base64Data) throw new Error("No base64 data found");
+                        window.atob(base64Data); // This will THROW if corrupt
+                    } catch (e) {
+                        console.error(`CORRUPT FACE DATA for ${admin.username}:`, e);
+                        continue; // SKIP THIS ADMIN, DO NOT CRASH
                     }
 
                     const img = new Image();
@@ -158,12 +169,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     await new Promise((resolve, reject) => {
                         img.onload = resolve;
                         img.onerror = (e) => reject(new Error(`Image load failed`));
-                        try {
-                            img.src = admin.faceIdData;
-                        } catch (e) {
-                            reject(e); // Catch synchronous src assignment errors (like invalid base64)
-                        }
-                        // Timeout safety
+                        img.src = admin.faceIdData;
                         setTimeout(() => reject(new Error("Image load timeout")), 2000);
                     });
 
