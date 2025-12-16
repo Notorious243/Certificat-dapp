@@ -429,27 +429,41 @@ const AdminPage = () => {
         console.log("Starting webcam in mode:", mode);
         setWebcamMode(mode);
         setFaceIdScanPhase('idle');
-        setScanProgress(0);
-
+        setScanProgress(0); // Reset scan progress
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 },
-                    facingMode: 'user'
+            // Robust Mobile Fallback Logic
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+                });
+            } catch (err) {
+                console.log("Ideal constraints failed, trying basic...", err);
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'user' }
+                    });
+                } catch (err2) {
+                    console.log("Basic constraints failed, trying fallback...", err2);
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 }
-            });
-            setWebcamStream(stream);
-            setShowWebcam(true);
+            }
 
-            // Si mode Face ID, démarrer le scan automatiquement après un délai
+            setWebcamStream(stream);
+            setShowWebcam(true); // Show webcam UI
+
+            // Ensure video element has playsinline (if reference exists immediately, though useEffect handles binding)
+            if (videoRef.current) {
+                videoRef.current.setAttribute('playsinline', 'true');
+            }
+
+            // If Face ID mode, start the scan automatically after a delay
             if (mode === 'faceId') {
                 setTimeout(() => {
                     startFaceIdScan();
                 }, 1000);
             }
         } catch (err) {
-            console.error("Error accessing webcam:", err);
             setStatus({ type: 'error', message: "Impossible d'accéder à la caméra. Vérifiez les permissions." });
         }
     };

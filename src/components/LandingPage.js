@@ -60,7 +60,7 @@ const LandingPage = () => {
         { name: "Accueil", link: "#accueil" },
         { name: "A propos", link: "#apropos" },
         { name: "Verification", link: "#verification" },
-        { name: "FAQs", link: "#faqs" },
+        { name: "FAQ", link: "#faqs" },
     ];
 
     const verifyCertificate = async (idToVerify) => {
@@ -849,8 +849,8 @@ const LandingPage = () => {
                                 answer: "Oui, la vérification de documents est un service public entièrement gratuit et accessible à tous, 24h/24 et 7j/7."
                             },
                             {
-                                question: "Que faire si un document est indiqué comme 'Révoqué' ?",
-                                answer: "Un document révoqué n'est plus valide. Cela peut être dû à une erreur lors de l'émission ou à une annulation officielle. Veuillez contacter l'organisme émetteur pour plus d'informations."
+                                question: "Que faire si je perds le hash (ID) de mon certificat ?",
+                                answer: "Le hash est unique est irrécupérable s'il n'est pas sauvegardé. Cependant, l'administrateur peut retrouver le certificat via la liste des enregistrements sur la blockchain."
                             }
                         ].map((faq, index) => (
                             <motion.div

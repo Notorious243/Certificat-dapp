@@ -3,17 +3,17 @@
   "name": "GouvChain - Blockchain Certificates",
   "icons": [
     {
-      "src": "Logo%202026.png",
+      "src": "logo.png",
       "sizes": "64x64 32x32 24x24 16x16",
       "type": "image/x-icon"
     },
     {
-      "src": "Logo%202026.png",
+      "src": "logo.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "Logo%202026.png",
+      "src": "logo.png",
       "type": "image/png",
       "sizes": "512x512"
     }

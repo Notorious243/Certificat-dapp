@@ -97,7 +97,7 @@ const LoginPage = () => {
                             transition={{ delay: 0.2, type: "spring" }}
                             className="mx-auto bg-blue-950/50 p-4 rounded-2xl mb-6 inline-flex ring-1 ring-blue-800/50 shadow-lg shadow-blue-900/20"
                         >
-                            <img src="/logo%20certificat.png" alt="GouvChain Logo" className="h-10 w-auto" />
+                            <img src="/logo2026-white.png" alt="GouvChain Logo" className="h-10 w-auto" />
                         </motion.div>
                         <CardTitle className="text-3xl font-bold text-white tracking-tight">Portail Agent</CardTitle>
                         <CardDescription className="text-slate-400 text-base mt-2">

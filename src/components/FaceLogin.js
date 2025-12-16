@@ -75,20 +75,30 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.4);
                 faceMatcherRef.current = faceMatcher;
 
-                // 3. Démarrer la webcam
-                const constraints = {
-                    video: {
-                        facingMode: 'user',
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
+                // 3. Démarrer la webcam (Robust Mobile Fallback)
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+                    });
+                } catch (err) {
+                    console.log("Ideal constraints failed, trying basic...", err);
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: 'user' }
+                        });
+                    } catch (err2) {
+                        console.log("Basic constraints failed, trying fallback...", err2);
+                        stream = await navigator.mediaDevices.getUserMedia({ video: true });
                     }
-                };
+                }
 
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 streamRef.current = stream; // Keep reference!
 
                 if (videoRef.current && isMounted) {
                     videoRef.current.srcObject = stream;
+                    // Ensure playsInline is active (React prop handles it but explicit sometimes helps)
+                    videoRef.current.setAttribute('playsinline', 'true');
                     videoRef.current.onloadedmetadata = () => {
                         videoRef.current.play().catch(e => console.error("Play error:", e));
                         setIsLoading(false);
@@ -101,8 +111,12 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 console.error("FaceLogin Error:", err);
                 if (isMounted) {
                     setLoadingState('error');
-                    setScanMessage("Erreur Système");
-                    setTimeout(() => shutdown(), 2000);
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        setScanMessage("Accès caméra refusé");
+                    } else {
+                        setScanMessage("Erreur Système");
+                    }
+                    setTimeout(() => shutdown(), 3000);
                 }
                 setIsLoading(false);
             }
@@ -353,8 +367,8 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -10 }}
                                     className={`text-sm font-medium tracking-wide ${loadingState === 'failure_moment' || loadingState === 'locked' ? 'text-red-400' :
-                                            loadingState === 'success' ? 'text-green-400' :
-                                                'text-white/50'
+                                        loadingState === 'success' ? 'text-green-400' :
+                                            'text-white/50'
                                         }`}
                                 >
                                     {scanMessage}
