@@ -146,14 +146,24 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
         for (const admin of activeAdmins) {
             try {
                 if (admin.faceIdData) {
+                    // Validate Data URI format
+                    if (!admin.faceIdData.startsWith('data:image')) {
+                        console.warn(`Skipping admin ${admin.username}: Invalid faceIdData format`);
+                        continue;
+                    }
+
                     const img = new Image();
                     img.crossOrigin = "anonymous";
 
                     await new Promise((resolve, reject) => {
                         img.onload = resolve;
-                        img.onerror = reject;
-                        img.src = admin.faceIdData;
-                        // Timeout if image takes too long (e.g. corrupt data)
+                        img.onerror = (e) => reject(new Error(`Image load failed`));
+                        try {
+                            img.src = admin.faceIdData;
+                        } catch (e) {
+                            reject(e); // Catch synchronous src assignment errors (like invalid base64)
+                        }
+                        // Timeout safety
                         setTimeout(() => reject(new Error("Image load timeout")), 2000);
                     });
 
@@ -167,6 +177,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 }
             } catch (err) {
                 console.warn(`Failed to process face for admin ${admin.username}:`, err);
+                // We do NOT rethrow here, so one bad profile doesn't kill the app.
             }
         }
         return labeledDescriptors;
