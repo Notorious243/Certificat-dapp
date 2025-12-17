@@ -60,51 +60,41 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 failedAttemptsRef.current = 0;
                 pendingAdminRef.current = null;
 
-                // 1. Charger les modèles (Optimized for Mobile: TinyFaceDetector)
-                await Promise.all([
-                    faceapi.nets.tinyFaceDetector.loadFromUri('/models'), // Lighter detector
+                // PARALLEL INIT: CAMERA + MODELS (Requests Permission Instantly)
+                const [stream, ..._] = await Promise.all([
+                    // 1. Démarrer la webcam (Simple & Direct for Mobile Permission)
+                    navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'user' } // Simple constraint, no resolution forcing
+                    }).catch(err => { throw err; }),
+
+                    // 2. Charger les modèles (TinyFaceDetector)
+                    faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
                     faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                     faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
                     faceapi.nets.faceExpressionNet.loadFromUri('/models')
                 ]);
 
-                // 2. Préparer les visages
+                // 3. Setup Stream
+                streamRef.current = stream;
+                if (videoRef.current && isMounted) {
+                    videoRef.current.srcObject = stream;
+                    videoRef.current.setAttribute('playsinline', 'true');
+                    videoRef.current.onloadedmetadata = () => {
+                        videoRef.current.play().catch(e => console.error("Play error:", e));
+                    };
+                }
+
+                // 4. Préparer les visages (After camera is asking/ready)
                 const labeledDescriptors = await loadLabeledImages();
                 if (labeledDescriptors.length === 0) throw new Error("Aucun administrateur n'a configuré Face ID.");
 
                 const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.4);
                 faceMatcherRef.current = faceMatcher;
 
-                // 3. Démarrer la webcam (Robust Mobile Fallback)
-                let stream;
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-                    });
-                } catch (err) {
-                    console.log("Ideal constraints failed, trying basic...", err);
-                    try {
-                        stream = await navigator.mediaDevices.getUserMedia({
-                            video: { facingMode: 'user' }
-                        });
-                    } catch (err2) {
-                        console.log("Basic constraints failed, trying fallback...", err2);
-                        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    }
-                }
-
-                streamRef.current = stream; // Keep reference!
-
-                if (videoRef.current && isMounted) {
-                    videoRef.current.srcObject = stream;
-                    // Ensure playsInline is active (React prop handles it but explicit sometimes helps)
-                    videoRef.current.setAttribute('playsinline', 'true');
-                    videoRef.current.onloadedmetadata = () => {
-                        videoRef.current.play().catch(e => console.error("Play error:", e));
-                        setIsLoading(false);
-                        setLoadingState('scanning');
-                        startAttempt();
-                    };
+                if (isMounted) {
+                    setIsLoading(false);
+                    setLoadingState('scanning');
+                    startAttempt();
                 }
 
             } catch (err) {
@@ -114,11 +104,10 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     let msg = "Erreur Système";
                     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') msg = "Accès caméra refusé";
                     else if (err.message.includes("Aucun administrateur")) msg = "Face ID non configuré";
-                    else if (err.message) msg = err.message; // SHOW ACTUAL ERROR FOR DEBUGGING
+                    else if (err.message) msg = err.message; // SHOW ACTUAL ERROR
 
-                    console.error("DEBUG FACE ID ERROR:", err); // Ensure it's in console too
                     setScanMessage(msg);
-                    setTimeout(() => shutdown(), 5000); // Give user time to read
+                    setTimeout(() => shutdown(), 5000);
                 }
                 setIsLoading(false);
             }

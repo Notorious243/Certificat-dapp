@@ -309,9 +309,9 @@ const AdminPage = () => {
         setScanMessage('Initialisation de Face ID...');
 
         try {
-            // 1. Charger les modèles IA
+            // 1. Charger les modèles IA (Use TinyFaceDetector for mobile consistency)
             await Promise.all([
-                faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
+                faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
                 faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                 faceapi.nets.faceRecognitionNet.loadFromUri('/models')
             ]);
@@ -342,8 +342,8 @@ const AdminPage = () => {
 
                     if (video.videoWidth > 0 && video.videoHeight > 0) {
                         try {
-                            // Détecter le visage en temps réel
-                            const detections = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+                            // Détecter le visage en temps réel (Use TinyFaceDetector)
+                            const detections = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
                                 .withFaceLandmarks()
                                 .withFaceDescriptor();
 
