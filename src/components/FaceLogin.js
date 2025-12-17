@@ -67,8 +67,8 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                         video: { facingMode: 'user' } // Simple constraint, no resolution forcing
                     }).catch(err => { throw err; }),
 
-                    // 2. Charger les modèles (TinyFaceDetector)
-                    faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+                    // 2. Charger les modèles (Revert to SSD MobileNet - TinyFiles Missing!)
+                    faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
                     faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                     faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
                     faceapi.nets.faceExpressionNet.loadFromUri('/models')
@@ -162,8 +162,8 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                         setTimeout(() => reject(new Error("Image load timeout")), 2000);
                     });
 
-                    // Use TinyFaceDetectorOptions for consistency and speed
-                    const detections = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
+                    // Use SsdMobilenetv1Options (Tiny is missing!)
+                    const detections = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
                         .withFaceLandmarks()
                         .withFaceDescriptor();
                     if (detections) {
@@ -228,7 +228,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
             }
 
             try {
-                const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
                 const detections = await faceapi.detectAllFaces(videoRef.current, options)
                     .withFaceLandmarks()
                     .withFaceDescriptors()
