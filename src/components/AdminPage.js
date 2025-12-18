@@ -168,9 +168,15 @@ const AdminPage = () => {
     const meshCanvasRef = useRef(null);
     const [currentLandmarks, setCurrentLandmarks] = useState(null);
     const [headChallenge, setHeadChallenge] = useState(null); // 'left', 'right', 'center', null
+    const headChallengeRef = useRef(null); // REF to fix stale closure in setInterval
     const [challengeCompleted, setChallengeCompleted] = useState({ left: false, right: false });
     const landmarkHistoryRef = useRef([]);
     const animationFrameRef = useRef(null);
+
+    // Sync headChallenge state with ref for setInterval access
+    useEffect(() => {
+        headChallengeRef.current = headChallenge;
+    }, [headChallenge]);
 
 
     const [showPassword, setShowPassword] = useState(false);
@@ -527,47 +533,42 @@ const AdminPage = () => {
                                 // NOTE: In setInterval state is stale. We need a ref or functional update.
                                 // Better: Pass a value derived from challenges.
 
+                                // USE REF to get current challenge (fixes stale closure)
+                                const currentChallenge = headChallengeRef.current;
+
                                 let currentProgressValue = 0;
-                                if (headChallenge === 'left') currentProgressValue = 40;
-                                else if (headChallenge === 'right') currentProgressValue = 60;
-                                else if (headChallenge === 'final') currentProgressValue = 85;
+                                if (currentChallenge === 'left') currentProgressValue = 40;
+                                else if (currentChallenge === 'right') currentProgressValue = 60;
+                                else if (currentChallenge === 'final') currentProgressValue = 85;
                                 else currentProgressValue = 20;
 
-                                // DRAW MESH (BLUE)
                                 drawFaceMesh(landmarks, meshCanvas, video.videoWidth, video.videoHeight, currentProgressValue);
                                 setCurrentLandmarks(landmarks);
 
                                 const livenessCheck = analyzeMicroMovements(landmarks);
                                 const yaw = calculateYaw(landmarks);
 
-                                // RELAXED THRESHOLDS for "Stuck at 35%" fix
-                                // Center: |yaw| < 0.2 (was 0.15)
-                                // Left: yaw < -0.2 (was -0.25)
-                                // Right: yaw > 0.2 (was 0.25)
-
-                                // OPTIMIZED THRESHOLDS & SPEEDS
-
-                                if (headChallenge === 'center') {
+                                // USING currentChallenge (from REF) instead of headChallenge (stale state)
+                                if (currentChallenge === 'center') {
                                     if (Math.abs(yaw) < 0.25) {
-                                        setTimeout(() => setHeadChallenge('left'), 100); // 100ms delay
-                                        setScanProgress(prev => Math.min(prev + 8, 40)); // Faster increment
-                                        setScanMessage('Tournez légèrement la tête à GAUCHE ⬅️');
+                                        setHeadChallenge('left');
+                                        setScanProgress(prev => Math.min(prev + 10, 40));
+                                        setScanMessage('Tournez la tête à GAUCHE ⬅️');
                                     } else {
-                                        setScanMessage(yaw > 0 ? "Tournez un peu à GAUCHE ⬅️" : "Tournez un peu à DROITE ➡️");
-                                        // Still allow some progress if close
+                                        setScanMessage(yaw > 0 ? "Tournez à GAUCHE ⬅️" : "Tournez à DROITE ➡️");
                                         if (Math.abs(yaw) < 0.4) setScanProgress(prev => Math.min(prev + 1, 35));
                                     }
-                                } else if (headChallenge === 'left' && yaw < -0.15) {
+                                } else if (currentChallenge === 'left' && yaw < -0.12) {
                                     setChallengeCompleted(prev => ({ ...prev, left: true }));
-                                    setTimeout(() => setHeadChallenge('right'), 100); // 100ms delay
-                                    setScanProgress(prev => Math.min(prev + 20, 60)); // Big jump
+                                    setHeadChallenge('right');
+                                    setScanProgress(prev => Math.min(prev + 20, 60));
                                     setScanMessage('Bien ! Maintenant à DROITE ➡️');
-                                } else if (headChallenge === 'right' && yaw > 0.15) {
+                                } else if (currentChallenge === 'right' && yaw > 0.12) {
                                     setChallengeCompleted(prev => ({ ...prev, right: true }));
-                                    setTimeout(() => setHeadChallenge('final'), 100); // 100ms delay
-                                    setScanProgress(prev => Math.min(prev + 20, 80)); // Big jump
+                                    setHeadChallenge('final');
+                                    setScanProgress(prev => Math.min(prev + 20, 80));
                                     setScanMessage('Parfait ! Recentrez...');
-                                } else if (headChallenge === 'final') {
+                                } else if (currentChallenge === 'final') {
                                     if (Math.abs(yaw) < 0.2 && detections.detection.score > 0.85) {
                                         highQualityFrames++;
                                         setScanProgress(prev => Math.min(prev + 5, 98)); // Fast finish
@@ -653,11 +654,11 @@ const AdminPage = () => {
                                     setScanProgress(prev => {
                                         // Cap based on current challenge to prevent overflow before completion
                                         let cap = 35;
-                                        if (headChallenge === 'center') cap = 35;
-                                        if (headChallenge === 'left') cap = 55;
-                                        if (headChallenge === 'right') cap = 75;
+                                        if (currentChallenge === 'center') cap = 35;
+                                        if (currentChallenge === 'left') cap = 55;
+                                        if (currentChallenge === 'right') cap = 75;
 
-                                        return Math.min(prev + 0.5, cap); // Faster drift
+                                        return Math.min(prev + 0.5, cap);
                                     });
                                 }
                             } else {
