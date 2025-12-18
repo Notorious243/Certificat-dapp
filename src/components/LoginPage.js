@@ -9,14 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/
 import { StarsBackground } from './ui/stars-background';
 import { ShootingStars } from './ui/shooting-stars';
 import FaceLogin from './FaceLogin';
+import { db } from '../firebase';
+import { collection, getDocs, query, where, addDoc } from 'firebase/firestore';
 
-// Admin accounts
-// Admin accounts (Fallback defaults)
-const DEFAULT_ADMINS = [
-    { id: '1', username: 'Michel', password: 'Michel7', firstName: 'Michel', lastName: 'Maleka', photo: '/images/michel.png', status: 'Active' },
-    { id: '2', username: 'Gilva', password: 'Gilva7', firstName: 'Gilva', lastName: 'Kabongo', photo: '/images/gilva.jpg', status: 'Active' },
-    { id: '3', username: 'Fiston', password: 'Fiston7', firstName: 'Fiston', lastName: 'Kalonda', photo: '/images/fiston.jpg', status: 'Active' }
-];
+// Admin accounts handled via Firestore
 
 const LoginPage = () => {
     const navigate = useNavigate();
@@ -24,18 +20,6 @@ const LoginPage = () => {
     const [credentials, setCredentials] = useState({ username: '', password: '' });
     const [error, setError] = useState('');
     const [showFaceLogin, setShowFaceLogin] = useState(false);
-
-    // Load admins from localStorage to ensure we have the latest data (including changes made in AdminPage)
-    // If no data exists, we use the defaults.
-    const [admins] = useState(() => {
-        const savedAdmins = localStorage.getItem('registeredAdmins');
-        if (savedAdmins) {
-            return JSON.parse(savedAdmins);
-        }
-        // If not in storage, use defaults and save them (to seed the app)
-        localStorage.setItem('registeredAdmins', JSON.stringify(DEFAULT_ADMINS));
-        return DEFAULT_ADMINS;
-    });
 
     const handleFaceLoginSuccess = (account) => {
         setShowFaceLogin(false);
@@ -53,11 +37,19 @@ const LoginPage = () => {
         setIsLoading(true);
         setError('');
 
-        // Validate credentials against the LOADED admins (from localStorage)
-        setTimeout(() => {
-            const validAccount = admins.find(
-                acc => acc.username === credentials.username && acc.password === credentials.password
-            );
+        try {
+            // Check Firestore for user
+            const adminsRef = collection(db, "admins");
+            const q = query(adminsRef, where("username", "==", credentials.username));
+            const querySnapshot = await getDocs(q);
+
+            let validAccount = null;
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.password === credentials.password) {
+                    validAccount = { id: doc.id, ...data };
+                }
+            });
 
             if (validAccount) {
                 // Store login state and user info
@@ -68,7 +60,11 @@ const LoginPage = () => {
                 setError('Nom d\'utilisateur ou mot de passe incorrect.');
                 setIsLoading(false);
             }
-        }, 1000);
+        } catch (err) {
+            console.error("Login Error:", err);
+            setError("Erreur de connexion au serveur.");
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -199,7 +195,6 @@ const LoginPage = () => {
                 isOpen={showFaceLogin}
                 onClose={() => setShowFaceLogin(false)}
                 onLogin={handleFaceLoginSuccess}
-                adminAccounts={admins}
             />
         </div >
     );

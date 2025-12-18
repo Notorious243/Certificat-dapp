@@ -19,9 +19,8 @@ import CertificatePreview from './CertificatePreview';
 import { AdminTable } from './AdminTable';
 import { uploadToIPFS, unpinFromIPFS } from '../utils/ipfs';
 import { CONTRACT_ADDRESS, CONTRACT_ABI, ADMIN_ADDRESS, EMAILJS_CONFIG, APP_URL, NETWORK_CONFIG } from '../config';
-// import { calculateIpfsHash }s from '../utils/ipfsHash'; // Non utilisé car hash Pinata imprévisible
-
-
+import { db } from '../firebase';
+import { collection, getDocs, addDoc, updateDoc, doc, deleteDoc, setDoc } from 'firebase/firestore';
 
 // MetaMask Logo Component
 const MetaMaskLogo = () => (
@@ -147,29 +146,10 @@ const AdminPage = () => {
 
     const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'issue', 'admins'
 
-    // Initialiser les admins depuis localStorage ou utiliser les défauts
-    const [admins, setAdmins] = useState(() => {
-        const savedAdmins = localStorage.getItem('registeredAdmins');
-        const defaultAdmins = [
-            { id: '1', firstName: 'Michel', lastName: 'Maleka', username: 'Michel', password: 'Michel7', status: 'Active', photo: '/images/michel.png' },
-            { id: '2', firstName: 'Fiston', lastName: 'Kalonda', username: 'Fiston', password: 'Fiston7', status: 'Active', photo: '/images/fiston.jpg' },
-            { id: '3', firstName: 'Gilva', lastName: 'Kabongo', username: 'Gilva', password: 'Gilva7', status: 'Active', photo: '/images/gilva.jpg' }
-        ];
+    // Admin State Management (Firestore)
+    const [admins, setAdmins] = useState([]);
+    const [loadingAdmins, setLoadingAdmins] = useState(true);
 
-        if (savedAdmins) {
-            let parsed = JSON.parse(savedAdmins);
-            // Patch: Ensure default admins have their photos if missing (fix for stale localStorage)
-            parsed = parsed.map(admin => {
-                const def = defaultAdmins.find(d => d.username === admin.username);
-                if (def && !admin.photo) {
-                    return { ...admin, photo: def.photo };
-                }
-                return admin;
-            });
-            return parsed;
-        }
-        return defaultAdmins;
-    });
     const [newAdmin, setNewAdmin] = useState({ firstName: '', lastName: '', username: '', password: '', photo: '', faceIdData: '', faceIdConfigured: false });
     const [editingAdmin, setEditingAdmin] = useState(null);
     const [showWebcam, setShowWebcam] = useState(false);
@@ -183,6 +163,15 @@ const AdminPage = () => {
     const [scanProgress, setScanProgress] = useState(0);
     const [scanMessage, setScanMessage] = useState('');
     const scanIntervalRef = useRef(null);
+
+    // Face Mesh & Anti-Spoofing States
+    const meshCanvasRef = useRef(null);
+    const [currentLandmarks, setCurrentLandmarks] = useState(null);
+    const [headChallenge, setHeadChallenge] = useState(null); // 'left', 'right', 'center', null
+    const [challengeCompleted, setChallengeCompleted] = useState({ left: false, right: false });
+    const landmarkHistoryRef = useRef([]);
+    const animationFrameRef = useRef(null);
+
 
     const [showPassword, setShowPassword] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
@@ -212,55 +201,96 @@ const AdminPage = () => {
         }
     }, []);
 
-    const handleAddAdmin = (e) => {
-        e.preventDefault();
-        if (editingAdmin) {
-            // Mode édition
-            const updatedAdmins = admins.map(admin =>
-                admin.id === editingAdmin.id
-                    ? { ...admin, ...newAdmin }
-                    : admin
-            );
-            setAdmins(updatedAdmins);
-            localStorage.setItem('registeredAdmins', JSON.stringify(updatedAdmins));
-
-            // Synchronisation si l'admin modifié est l'utilisateur connecté
-            if (currentUser && editingAdmin.username === currentUser.username) {
-                const updatedCurrentUser = { ...currentUser, ...newAdmin };
-                setCurrentUser(updatedCurrentUser);
-                sessionStorage.setItem('currentUser', JSON.stringify(updatedCurrentUser));
+    // Fetch Admins from Firestore
+    useEffect(() => {
+        const fetchAdmins = async () => {
+            setLoadingAdmins(true);
+            try {
+                const querySnapshot = await getDocs(collection(db, "admins"));
+                const adminsList = querySnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                setAdmins(adminsList);
+            } catch (error) {
+                console.error("Error fetching admins: ", error);
+            } finally {
+                setLoadingAdmins(false);
             }
+        };
 
-            setEditingAdmin(null);
-            setStatus({ type: 'success', message: 'Administrateur modifié avec succès.' });
-        } else {
-            // Mode ajout
-            const newAdminData = {
-                id: Date.now().toString(),
-                ...newAdmin,
-                status: 'Active'
-            };
-            const updatedAdmins = [...admins, newAdminData];
-            setAdmins(updatedAdmins);
-            localStorage.setItem('registeredAdmins', JSON.stringify(updatedAdmins));
-            setStatus({ type: 'success', message: 'Nouvel administrateur ajouté avec succès.' });
+        fetchAdmins();
+    }, []);
+
+    const handleAddAdmin = async (e) => {
+        e.preventDefault();
+        setStatus({ type: 'loading', message: editingAdmin ? 'Modification en cours...' : 'Ajout en cours...' });
+
+        try {
+            if (editingAdmin) {
+                // Mode édition
+                const adminRef = doc(db, "admins", editingAdmin.id);
+                // Exclude ID from the update data
+                const { id, ...updateData } = { ...editingAdmin, ...newAdmin };
+
+                await updateDoc(adminRef, updateData);
+
+                // Update local state immediately for UI responsiveness
+                setAdmins(admins.map(admin =>
+                    admin.id === editingAdmin.id
+                        ? { ...admin, ...newAdmin }
+                        : admin
+                ));
+
+                // Synchronisation si l'admin modifié est l'utilisateur connecté
+                if (currentUser && editingAdmin.username === currentUser.username) {
+                    const updatedCurrentUser = { ...currentUser, ...newAdmin };
+                    setCurrentUser(updatedCurrentUser);
+                    sessionStorage.setItem('currentUser', JSON.stringify(updatedCurrentUser));
+                }
+
+                setEditingAdmin(null);
+                setStatus({ type: 'success', message: 'Administrateur modifié avec succès (Cloud Sychronisé).' });
+            } else {
+                // Mode ajout
+                const newAdminData = {
+                    ...newAdmin,
+                    status: 'Active',
+                    createdAt: new Date().toISOString()
+                };
+
+                const docRef = await addDoc(collection(db, "admins"), newAdminData);
+
+                // Update local state
+                setAdmins([...admins, { id: docRef.id, ...newAdminData }]);
+
+                setStatus({ type: 'success', message: 'Nouvel administrateur ajouté avec succès (Cloud Sychronisé).' });
+            }
+            setNewAdmin({ firstName: '', lastName: '', username: '', password: '', photo: '', faceIdData: '', faceIdConfigured: false });
+            setShowPassword(false);
+        } catch (error) {
+            console.error("Error saving admin:", error);
+            setStatus({ type: 'error', message: 'Erreur lors de la sauvegarde sur le Cloud.' });
         }
-        setNewAdmin({ firstName: '', lastName: '', username: '', password: '', photo: '', faceIdData: '', faceIdConfigured: false });
-        setShowPassword(false);
         setTimeout(() => setStatus(null), 3000);
     };
 
-    // Fonction pour réinitialiser tous les admins aux valeurs par défaut
-    const handleResetAdmins = () => {
-        if (window.confirm('Êtes-vous sûr de vouloir réinitialiser tous les administrateurs ? Cette action supprimera tous les Face ID configurés.')) {
-            const defaultAdmins = [
-                { id: '1', firstName: 'Michel', lastName: 'Maleka', username: 'Michel', password: 'Michel7', status: 'Active', photo: '/images/michel.png', faceIdConfigured: false, faceIdData: '' },
-                { id: '2', firstName: 'Fiston', lastName: 'Kalonda', username: 'Fiston', password: 'Fiston7', status: 'Active', photo: '/images/fiston.jpg', faceIdConfigured: false, faceIdData: '' },
-                { id: '3', firstName: 'Gilva', lastName: 'Kabongo', username: 'Gilva', password: 'Gilva7', status: 'Active', photo: '/images/gilva.jpg', faceIdConfigured: false, faceIdData: '' }
-            ];
-            setAdmins(defaultAdmins);
-            localStorage.setItem('registeredAdmins', JSON.stringify(defaultAdmins));
-            setStatus({ type: 'success', message: 'Administrateurs réinitialisés avec succès !' });
+    // Fonction pour supprimer tous les admins (Danger Zone)
+    const handleResetAdmins = async () => {
+        if (window.confirm('ATTENTION : Cela va supprimer TOUS les administrateurs de la base de données. Il faudra en créer manuellement via la console Firebase pour retrouver l\'accès. Continuer ?')) {
+            setStatus({ type: 'loading', message: 'Suppression de tous les administrateurs...' });
+            try {
+                // Delete all current admins
+                const querySnapshot = await getDocs(collection(db, "admins"));
+                const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deletePromises);
+
+                setAdmins([]);
+                setStatus({ type: 'success', message: 'Tous les administrateurs ont été supprimés.' });
+            } catch (error) {
+                console.error("Reset error:", error);
+                setStatus({ type: 'error', message: 'Erreur lors de la suppression.' });
+            }
             setTimeout(() => setStatus(null), 3000);
         }
     };
@@ -288,10 +318,18 @@ const AdminPage = () => {
         setShowPassword(false);
     };
 
-    const handleRemoveAdmin = (id) => {
-        setAdmins(admins.filter(admin => admin.id !== id));
-        setStatus({ type: 'success', message: 'Administrateur supprimé.' });
-        setTimeout(() => setStatus(null), 3000);
+    const handleRemoveAdmin = async (id) => {
+        if (window.confirm('Êtes-vous sûr de vouloir supprimer cet administrateur ?')) {
+            try {
+                await deleteDoc(doc(db, "admins", id));
+                setAdmins(admins.filter(admin => admin.id !== id));
+                setStatus({ type: 'success', message: 'Administrateur supprimé du Cloud.' });
+            } catch (error) {
+                console.error("Delete error:", error);
+                setStatus({ type: 'error', message: 'Erreur lors de la suppression.' });
+            }
+            setTimeout(() => setStatus(null), 3000);
+        }
     };
 
     const handleLogout = () => {
@@ -302,128 +340,366 @@ const AdminPage = () => {
 
     // ===== FACE ID STYLE IPHONE - NOUVELLE IMPLÉMENTATION =====
 
+    // Face mesh triangles indices for 68-point landmarks (simplified Delaunay)
+    const FACE_MESH_TRIANGLES = [
+        // Jawline
+        [0, 1, 36], [1, 2, 41], [2, 3, 31], [3, 4, 48], [4, 5, 48], [5, 6, 59],
+        [6, 7, 58], [7, 8, 57], [8, 9, 56], [9, 10, 55], [10, 11, 54], [11, 12, 35],
+        [12, 13, 42], [13, 14, 47], [14, 15, 45], [15, 16, 45],
+        // Forehead/Eyebrows
+        [17, 18, 37], [18, 19, 38], [19, 20, 39], [20, 21, 27],
+        [22, 23, 27], [23, 24, 44], [24, 25, 43], [25, 26, 45],
+        // Nose
+        [27, 28, 39], [28, 29, 42], [29, 30, 35], [30, 31, 48], [30, 35, 54],
+        [31, 32, 48], [32, 33, 51], [33, 34, 52], [34, 35, 54],
+        // Left eye
+        [36, 37, 41], [37, 38, 40], [38, 39, 40], [39, 40, 41], [36, 41, 1],
+        // Right eye
+        [42, 43, 47], [43, 44, 46], [44, 45, 46], [45, 46, 47], [42, 47, 13],
+        // Mouth outer
+        [48, 49, 60], [49, 50, 61], [50, 51, 62], [51, 52, 63], [52, 53, 64], [53, 54, 55],
+        // Mouth inner
+        [60, 61, 67], [61, 62, 66], [62, 63, 65], [63, 64, 65],
+        // Center connections
+        [27, 39, 42], [31, 35, 30], [48, 59, 60], [54, 55, 64],
+        // Cheeks
+        [1, 31, 41], [2, 31, 3], [13, 35, 47], [12, 35, 13],
+        [36, 1, 0], [45, 16, 15]
+    ];
+
+    // Draw golden face mesh overlay
+    const drawFaceMesh = (landmarks, canvas, videoWidth, videoHeight) => {
+        if (!canvas || !landmarks) return;
+
+        const ctx = canvas.getContext('2d');
+        const points = landmarks.positions;
+
+        // Handle scaling for circular video container
+        const scale = canvas.width / videoWidth;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Golden/Orange gradient style with glow
+        const time = Date.now() / 1000;
+        const pulseIntensity = 0.7 + Math.sin(time * 3) * 0.3;
+
+        ctx.strokeStyle = `rgba(255, ${150 + Math.sin(time * 2) * 30}, 50, ${0.6 * pulseIntensity})`;
+        ctx.lineWidth = 1.2;
+        ctx.shadowColor = 'rgba(255, 150, 0, 0.8)';
+        ctx.shadowBlur = 10;
+
+        // Draw triangular mesh
+        FACE_MESH_TRIANGLES.forEach(([i, j, k]) => {
+            if (points[i] && points[j] && points[k]) {
+                ctx.beginPath();
+                ctx.moveTo(points[i].x * scale, points[i].y * scale);
+                ctx.lineTo(points[j].x * scale, points[j].y * scale);
+                ctx.lineTo(points[k].x * scale, points[k].y * scale);
+                ctx.closePath();
+                ctx.stroke();
+            }
+        });
+
+        // Draw pulsing landmark points
+        ctx.shadowBlur = 15;
+        points.forEach((point, idx) => {
+            const pointPulse = 0.5 + Math.sin(time * 4 + idx * 0.1) * 0.5;
+            ctx.fillStyle = `rgba(255, 200, 80, ${0.8 * pointPulse})`;
+            ctx.beginPath();
+            ctx.arc(point.x * scale, point.y * scale, 2 + pointPulse, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.shadowBlur = 0;
+    };
+
+    // Calculate yaw (left/right head turn) from landmarks
+    const calculateYaw = (landmarks) => {
+        if (!landmarks) return 0;
+        const points = landmarks.positions;
+
+        // Use nose tip (30) and jaw edges (0, 16) for yaw estimation
+        const noseTip = points[30];
+        const leftJaw = points[0];
+        const rightJaw = points[16];
+
+        // Calculate distances from nose to each jaw edge
+        const leftDist = Math.hypot(noseTip.x - leftJaw.x, noseTip.y - leftJaw.y);
+        const rightDist = Math.hypot(noseTip.x - rightJaw.x, noseTip.y - rightJaw.y);
+
+        // Normalized difference (-1 = looking left, +1 = looking right)
+        const yaw = (rightDist - leftDist) / (rightDist + leftDist) * 2;
+        return yaw;
+    };
+
+    // Analyze micro-movements (anti-spoofing for static photos)
+    const analyzeMicroMovements = (currentPoints) => {
+        if (!currentPoints) return { isLive: false, variance: 0 };
+
+        const history = landmarkHistoryRef.current;
+        history.push(currentPoints.positions.map(p => ({ x: p.x, y: p.y })));
+
+        // Keep only last 10 frames
+        if (history.length > 10) history.shift();
+
+        // Need at least 5 frames for analysis
+        if (history.length < 5) return { isLive: true, variance: 1 };
+
+        // Calculate variance of key points (nose, eyes, mouth corners)
+        const keyIndices = [30, 36, 45, 48, 54]; // Nose, left eye, right eye, mouth corners
+        let totalVariance = 0;
+
+        keyIndices.forEach(idx => {
+            const xValues = history.map(frame => frame[idx]?.x || 0);
+            const yValues = history.map(frame => frame[idx]?.y || 0);
+
+            const xMean = xValues.reduce((a, b) => a + b, 0) / xValues.length;
+            const yMean = yValues.reduce((a, b) => a + b, 0) / yValues.length;
+
+            const xVar = xValues.reduce((sum, v) => sum + Math.pow(v - xMean, 2), 0) / xValues.length;
+            const yVar = yValues.reduce((sum, v) => sum + Math.pow(v - yMean, 2), 0) / yValues.length;
+
+            totalVariance += Math.sqrt(xVar + yVar);
+        });
+
+        // Threshold: real faces have subtle natural micro-movements
+        const averageVariance = totalVariance / keyIndices.length;
+        const isLive = averageVariance > 0.3; // Very small threshold for natural movement
+
+        return { isLive, variance: averageVariance };
+    };
+
+    // Reset face mesh states
+    const resetFaceMeshStates = () => {
+        setCurrentLandmarks(null);
+        setHeadChallenge(null);
+        setChallengeCompleted({ left: false, right: false });
+        landmarkHistoryRef.current = [];
+        if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+            animationFrameRef.current = null;
+        }
+    };
+
     // Fonction de scan Face ID automatique style iPhone
+
     const startFaceIdScan = async () => {
         setFaceIdScanPhase('initializing');
         setScanProgress(0);
         setScanMessage('Initialisation de Face ID...');
+        resetFaceMeshStates();
 
         try {
-            // 1. Charger les modèles IA (Use SSD MobileNet - TinyFiles Missing!)
+            // 1. Charger les modèles IA
             await Promise.all([
                 faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
                 faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                 faceapi.nets.faceRecognitionNet.loadFromUri('/models')
             ]);
 
-            setScanProgress(20);
-            setScanMessage('Positionnez votre visage dans le cadre...');
+            setScanProgress(15);
+            setScanMessage('Regardez la caméra...');
             setFaceIdScanPhase('scanning');
 
-            // 2. Démarrer le scan en temps réel
+            // Initialize head challenge after a short delay
+            setTimeout(() => setHeadChallenge('center'), 1500);
+
+            // 2. Démarrer le scan en temps réel avec animation mesh
             let scanAttempts = 0;
-            const maxAttempts = 50; // ~10 secondes max
+            const maxAttempts = 100; // ~20 secondes max (more time for challenges)
+            let faceDescriptorBuffer = null;
+            let highQualityFrames = 0;
 
             scanIntervalRef.current = setInterval(async () => {
                 scanAttempts++;
 
                 if (scanAttempts > maxAttempts) {
                     clearInterval(scanIntervalRef.current);
+                    resetFaceMeshStates();
                     setFaceIdScanPhase('error');
                     setScanMessage('Temps écoulé. Réessayez.');
                     return;
                 }
 
-                // Animation de progression
-                setScanProgress(prev => Math.min(prev + 1.5, 90));
-
-                if (videoRef.current && canvasRef.current) {
+                if (videoRef.current && meshCanvasRef.current) {
                     const video = videoRef.current;
+                    const meshCanvas = meshCanvasRef.current;
 
                     if (video.videoWidth > 0 && video.videoHeight > 0) {
+                        // Sync mesh canvas size with video
+                        if (meshCanvas.width !== video.videoWidth) {
+                            meshCanvas.width = video.videoWidth;
+                            meshCanvas.height = video.videoHeight;
+                        }
+
                         try {
-                            // Détecter le visage en temps réel (Use SsdMobilenetv1)
+                            // Détection en temps réel
                             const detections = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
                                 .withFaceLandmarks()
                                 .withFaceDescriptor();
 
-                            // DISTANCE CHECK (Remplissage Progressif)
                             if (detections) {
-                                const boxArea = detections.detection.box.width * detections.detection.box.height;
-                                const videoArea = video.videoWidth * video.videoHeight;
-                                const ratio = boxArea / videoArea;
+                                const landmarks = detections.landmarks;
 
-                                // Si trop loin (< 4.5% de l'image)
-                                if (ratio < 0.045) {
-                                    setScanMessage('Rapprochez-vous du cercle ! 🔍');
-                                    // Ralentir la progression ou reculer légèrement
-                                    setScanProgress(prev => Math.max(prev - 0.5, 0));
-                                    return; // Skip capture loop for this frame
+                                // ===== DRAW FACE MESH OVERLAY =====
+                                drawFaceMesh(landmarks, meshCanvas, video.videoWidth, video.videoHeight);
+                                setCurrentLandmarks(landmarks);
+
+                                // ===== ANTI-SPOOFING: MICRO-MOVEMENTS =====
+                                const livenessCheck = analyzeMicroMovements(landmarks);
+
+                                // ===== HEAD TURN CHALLENGE =====
+                                const yaw = calculateYaw(landmarks);
+
+                                // Check challenge completion
+                                if (headChallenge === 'center' && Math.abs(yaw) < 0.15) {
+                                    // Face is centered, now ask to turn
+                                    setTimeout(() => setHeadChallenge('left'), 500);
+                                    setScanProgress(prev => Math.min(prev + 5, 40));
+                                    setScanMessage('Tournez légèrement la tête à GAUCHE ⬅️');
+                                } else if (headChallenge === 'left' && yaw < -0.25) {
+                                    // Turned left successfully
+                                    setChallengeCompleted(prev => ({ ...prev, left: true }));
+                                    setTimeout(() => setHeadChallenge('right'), 500);
+                                    setScanProgress(prev => Math.min(prev + 15, 55));
+                                    setScanMessage('Bien ! Maintenant à DROITE ➡️');
+                                } else if (headChallenge === 'right' && yaw > 0.25) {
+                                    // Turned right successfully
+                                    setChallengeCompleted(prev => ({ ...prev, right: true }));
+                                    setTimeout(() => setHeadChallenge('final'), 300);
+                                    setScanProgress(prev => Math.min(prev + 15, 70));
+                                    setScanMessage('Parfait ! Recentrez pour capturer...');
+                                } else if (headChallenge === 'final') {
+                                    // Waiting for centered, high quality capture
+                                    if (Math.abs(yaw) < 0.12 && detections.detection.score > 0.88) {
+                                        highQualityFrames++;
+                                        setScanProgress(prev => Math.min(prev + 3, 95));
+
+                                        // Store best descriptor
+                                        if (!faceDescriptorBuffer || detections.detection.score > 0.90) {
+                                            faceDescriptorBuffer = Array.from(detections.descriptor);
+                                        }
+
+                                        // Need 3 good frames for stable capture
+                                        if (highQualityFrames >= 3 && livenessCheck.isLive) {
+                                            clearInterval(scanIntervalRef.current);
+
+                                            // Final check passed!
+                                            setFaceIdScanPhase('processing');
+                                            setScanProgress(98);
+                                            setScanMessage('Traitement biométrique...');
+
+                                            // Capture high-res photo
+                                            const captureCanvas = canvasRef.current;
+                                            captureCanvas.width = video.videoWidth;
+                                            captureCanvas.height = video.videoHeight;
+                                            const context = captureCanvas.getContext('2d');
+                                            context.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+                                            const faceDataUrl = captureCanvas.toDataURL('image/jpeg', 0.95);
+
+                                            // Clear mesh
+                                            const meshCtx = meshCanvas.getContext('2d');
+                                            meshCtx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
+
+                                            setTimeout(async () => {
+                                                setFaceIdScanPhase('success');
+                                                setScanProgress(100);
+                                                setScanMessage('Face ID Calibré avec succès !');
+
+                                                // Update Form State with both image AND descriptor
+                                                setNewAdmin(prev => ({
+                                                    ...prev,
+                                                    faceIdConfigured: true,
+                                                    faceIdData: faceDataUrl,
+                                                    faceDescriptor: faceDescriptorBuffer // Store 128D descriptor
+                                                }));
+
+                                                // AUTO-SAVE TO FIRESTORE
+                                                if (editingAdmin && editingAdmin.id) {
+                                                    try {
+                                                        console.log("Auto-saving Face ID to Firestore...");
+                                                        const adminRef = doc(db, "admins", editingAdmin.id);
+                                                        await updateDoc(adminRef, {
+                                                            faceIdConfigured: true,
+                                                            faceIdData: faceDataUrl,
+                                                            faceDescriptor: faceDescriptorBuffer
+                                                        });
+
+                                                        setAdmins(prev => prev.map(adm =>
+                                                            adm.id === editingAdmin.id
+                                                                ? { ...adm, faceIdConfigured: true, faceIdData: faceDataUrl, faceDescriptor: faceDescriptorBuffer }
+                                                                : adm
+                                                        ));
+
+                                                        if (currentUser && currentUser.username === editingAdmin.username) {
+                                                            const updatedUser = { ...currentUser, faceIdConfigured: true, faceIdData: faceDataUrl, faceDescriptor: faceDescriptorBuffer };
+                                                            setCurrentUser(updatedUser);
+                                                            sessionStorage.setItem('currentUser', JSON.stringify(updatedUser));
+                                                        }
+
+                                                        setStatus({ type: 'success', message: '✅ Face ID haute précision sauvegardé !' });
+                                                    } catch (e) {
+                                                        console.error("Auto-save failed:", e);
+                                                        setStatus({ type: 'error', message: 'Erreur sauvegarde Cloud.' });
+                                                    }
+                                                }
+
+                                                setTimeout(() => {
+                                                    stopWebcam();
+                                                    resetFaceMeshStates();
+                                                    setFaceIdScanPhase('idle');
+                                                    setScanProgress(0);
+                                                    if (!editingAdmin) {
+                                                        setStatus({ type: 'success', message: '✅ Face ID configuré (validez le formulaire)' });
+                                                    }
+                                                    setTimeout(() => setStatus(null), 3000);
+                                                }, 2000);
+                                            }, 500);
+                                        } else if (!livenessCheck.isLive && highQualityFrames > 5) {
+                                            // Static photo detected - reject
+                                            clearInterval(scanIntervalRef.current);
+                                            setFaceIdScanPhase('error');
+                                            setScanMessage('Visage statique détecté. Utilisez un vrai visage!');
+                                            resetFaceMeshStates();
+                                        }
+                                    } else {
+                                        setScanMessage('Centrez bien votre visage...');
+                                    }
+                                } else {
+                                    // Guide messages during challenges
+                                    const box = detections.detection.box;
+                                    const boxArea = box.width * box.height;
+                                    const videoArea = video.videoWidth * video.videoHeight;
+                                    const ratio = boxArea / videoArea;
+
+                                    if (ratio < 0.045) {
+                                        setScanMessage('Rapprochez-vous ! 🔍');
+                                        setScanProgress(prev => Math.max(prev - 0.5, 15));
+                                    } else {
+                                        setScanProgress(prev => Math.min(prev + 0.5, 35));
+                                    }
                                 }
-                            }
-
-                            // QUALITY CHECK: Ensure high confidence capture (Apple Style)
-                            if (detections && detections.detection.score > 0.85) {
-                                // Visage détecté avec haute précision ! Capturer l'image
-                                clearInterval(scanIntervalRef.current);
-
-                                setFaceIdScanPhase('processing');
-                                setScanProgress(95);
-                                setScanMessage('Visage détecté ! Traitement...');
-
-                                // Capturer la photo
-                                const canvas = canvasRef.current;
-                                canvas.width = video.videoWidth;
-                                canvas.height = video.videoHeight;
-                                const context = canvas.getContext('2d');
-                                context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                                const faceDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-
-                                // Succès !
-                                setTimeout(() => {
-                                    setFaceIdScanPhase('success');
-                                    setScanProgress(100);
-                                    setScanMessage('Face ID enregistré avec succès !');
-
-                                    // Sauvegarder le Face ID
-                                    setNewAdmin(prev => ({
-                                        ...prev,
-                                        faceIdConfigured: true,
-                                        faceIdData: faceDataUrl
-                                    }));
-
-                                    // Fermer après animation de succès
-                                    setTimeout(() => {
-                                        stopWebcam();
-                                        setFaceIdScanPhase('idle');
-                                        setScanProgress(0);
-                                        setStatus({ type: 'success', message: '✅ Face ID configuré avec succès !' });
-                                        setTimeout(() => setStatus(null), 3000);
-                                    }, 2000);
-                                }, 500);
                             } else {
-                                // Pas de visage détecté, mettre à jour le message
-                                const messages = [
-                                    'Positionnez votre visage dans le cadre...',
-                                    'Regardez directement la caméra...',
-                                    'Assurez-vous d\'être bien éclairé...',
-                                    'Gardez votre visage immobile...'
-                                ];
-                                setScanMessage(messages[Math.floor(scanAttempts / 10) % messages.length]);
+                                // No face detected - clear mesh
+                                const ctx = meshCanvas.getContext('2d');
+                                ctx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
+                                setScanMessage('Recherche de visage...');
                             }
                         } catch (err) {
                             console.error('Scan error:', err);
                         }
                     }
                 }
-            }, 200);
+            }, 150); // Faster interval for smoother mesh animation
 
         } catch (error) {
             console.error('Face ID init error:', error);
             setFaceIdScanPhase('error');
             setScanMessage('Erreur d\'initialisation. Réessayez.');
+            resetFaceMeshStates();
         }
     };
+
 
     const startWebcam = async (mode = 'photo') => {
         console.log("Starting webcam in mode:", mode);
@@ -2329,6 +2605,41 @@ const AdminPage = () => {
                                         style={{ transform: 'scaleX(-1) scale(1.3)' }}
                                     />
 
+                                    {/* Face Mesh Overlay Canvas */}
+                                    <canvas
+                                        ref={meshCanvasRef}
+                                        className="absolute inset-0 w-full h-full pointer-events-none"
+                                        style={{ transform: 'scaleX(-1) scale(1.3)', transformOrigin: 'center center' }}
+                                    />
+
+                                    {/* Head Turn Challenge Indicator */}
+                                    {headChallenge && headChallenge !== 'final' && faceIdScanPhase === 'scanning' && (
+                                        <motion.div
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                                        >
+                                            {headChallenge === 'left' && (
+                                                <motion.div
+                                                    animate={{ x: [-10, -20, -10] }}
+                                                    transition={{ duration: 1, repeat: Infinity }}
+                                                    className="absolute left-2 text-4xl"
+                                                >
+                                                    ⬅️
+                                                </motion.div>
+                                            )}
+                                            {headChallenge === 'right' && (
+                                                <motion.div
+                                                    animate={{ x: [10, 20, 10] }}
+                                                    transition={{ duration: 1, repeat: Infinity }}
+                                                    className="absolute right-2 text-4xl"
+                                                >
+                                                    ➡️
+                                                </motion.div>
+                                            )}
+                                        </motion.div>
+                                    )}
+
                                     {/* Scan Overlay Animation */}
                                     {faceIdScanPhase === 'scanning' && (
                                         <motion.div
@@ -2342,6 +2653,7 @@ const AdminPage = () => {
                                             }}
                                             className="absolute left-0 right-0 h-1/3 bg-gradient-to-b from-transparent via-blue-500/30 to-transparent"
                                         />
+
                                     )}
 
                                     {/* Success Overlay */}

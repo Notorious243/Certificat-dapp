@@ -7,7 +7,7 @@ import {
     getSortedRowModel,
     useReactTable,
 } from "@tanstack/react-table"
-import { ArrowUpDown, ChevronDown, MoreHorizontal, Trash2, Edit, UserPlus } from "lucide-react"
+import { ArrowUpDown, ChevronDown, MoreHorizontal, Trash2, Edit, UserPlus, ScanFace } from "lucide-react"
 
 import { Button } from "./ui/button"
 import { Checkbox } from "./ui/checkbox"
@@ -111,6 +111,29 @@ export function AdminTable({ data, onRemoveAdmin, onEditAdmin }) {
                 </div>
             ),
             size: 120,
+        },
+        {
+            accessorKey: "faceIdConfigured",
+            header: () => <div className="font-bold text-blue-900 text-center">Face ID</div>,
+            cell: ({ row }) => {
+                const isConfigured = row.getValue("faceIdConfigured");
+                return (
+                    <div className="flex justify-center">
+                        {isConfigured ? (
+                            <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full text-xs font-medium border border-emerald-200 shadow-sm">
+                                <ScanFace className="h-3.5 w-3.5" />
+                                <span>Activé</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1.5 text-red-500 bg-red-50 px-2.5 py-1 rounded-full text-xs font-medium border border-red-200 opacity-80">
+                                <ScanFace className="h-3.5 w-3.5" />
+                                <span>Désactivé</span>
+                            </div>
+                        )}
+                    </div>
+                );
+            },
+            size: 130,
         },
         {
             id: "actions",

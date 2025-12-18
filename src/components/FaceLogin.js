@@ -1,10 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as faceapi from 'face-api.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Lock, Unlock, Eye, AlertCircle, ScanFace } from 'lucide-react';
 import { Button } from './ui/button';
+import { Lock, Unlock, ScanFace } from 'lucide-react';
+import { db } from '../firebase';
+import { collection, getDocs } from 'firebase/firestore';
 
-const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
+
+const FaceLogin = ({ isOpen, onClose, onLogin }) => { // Remove adminAccounts prop
     const videoRef = useRef(null);
     const streamRef = useRef(null); // Fix: Store stream explicitly
 
@@ -16,6 +19,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
     const pendingAdminRef = useRef(null);
     const failedAttemptsRef = useRef(0);
     const startTimeRef = useRef(0);
+    const activeAdminsRef = useRef([]); // Store fetched admins here
 
     // Process refs
     const detectionIntervalRef = useRef(null);
@@ -60,14 +64,14 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                 failedAttemptsRef.current = 0;
                 pendingAdminRef.current = null;
 
-                // PARALLEL INIT: CAMERA + MODELS (Requests Permission Instantly)
-                const [stream, ..._] = await Promise.all([
+                // PARALLEL INIT: CAMERA + MODELS + FIRESTORE
+                const [stream, _] = await Promise.all([
                     // 1. Démarrer la webcam (Simple & Direct for Mobile Permission)
                     navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'user' } // Simple constraint, no resolution forcing
+                        video: { facingMode: 'user' } // Simple constraint
                     }).catch(err => { throw err; }),
 
-                    // 2. Charger les modèles (Revert to SSD MobileNet - TinyFiles Missing!)
+                    // 2. Charger les modèles
                     faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
                     faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                     faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
@@ -84,11 +88,21 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     };
                 }
 
-                // 4. Préparer les visages (After camera is asking/ready)
-                const labeledDescriptors = await loadLabeledImages();
-                if (labeledDescriptors.length === 0) throw new Error("Aucun administrateur n'a configuré Face ID.");
+                // 4. Fetch Admins from Firebase & Prepare Faces
+                setScanMessage("Synchronisation Cloud...");
 
-                const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.4);
+                // Fetch from Firestore
+                const querySnapshot = await getDocs(collection(db, "admins"));
+                const fetchedAdmins = querySnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                activeAdminsRef.current = fetchedAdmins; // Store for matching later
+
+                const labeledDescriptors = await processLabeledImages(fetchedAdmins);
+                if (labeledDescriptors.length === 0) throw new Error("Aucun administrateur (avec Face ID) trouvé sur le Cloud.");
+
+                const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
                 faceMatcherRef.current = faceMatcher;
 
                 if (isMounted) {
@@ -103,8 +117,8 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     setLoadingState('error');
                     let msg = "Erreur Système";
                     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') msg = "Accès caméra refusé";
-                    else if (err.message.includes("Aucun administrateur")) msg = "Face ID non configuré";
-                    else if (err.message) msg = err.message; // SHOW ACTUAL ERROR
+                    else if (err.message.includes("Aucun administrateur")) msg = "Face ID non configuré (Cloud)";
+                    else if (err.message) msg = err.message;
 
                     setScanMessage(msg);
                     setTimeout(() => shutdown(), 5000);
@@ -121,35 +135,29 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
             isMounted = false;
             stopWebcam();
         };
-    }, [isOpen, adminAccounts]);
+    }, [isOpen]); // Removed adminAccounts dependency
 
     const shutdown = () => {
         stopWebcam();
         onClose();
     };
 
-    const loadLabeledImages = async () => {
+    const processLabeledImages = async (admins) => {
         const labeledDescriptors = [];
-        const activeAdmins = adminAccounts.filter(a => a.status === 'Active' && a.faceIdConfigured && a.faceIdData);
+        const activeAdmins = admins.filter(a => a.status === 'Active' && a.faceIdConfigured && a.faceIdData);
 
         for (const admin of activeAdmins) {
             try {
                 if (admin.faceIdData) {
                     // RIGOROUS DATA VALIDATION
-                    // 1. Check Header
-                    if (!admin.faceIdData.startsWith('data:image')) {
-                        console.warn(`Skipping admin ${admin.username}: Invalid Data URI header`);
-                        continue;
-                    }
+                    if (!admin.faceIdData.startsWith('data:image')) continue;
 
-                    // 2. Check Base64 Integrity (The "String did not match" fix)
                     try {
                         const base64Data = admin.faceIdData.split(',')[1];
-                        if (!base64Data) throw new Error("No base64 data found");
-                        window.atob(base64Data); // This will THROW if corrupt
+                        if (!base64Data) throw new Error("No base64");
+                        window.atob(base64Data);
                     } catch (e) {
-                        console.error(`CORRUPT FACE DATA for ${admin.username}:`, e);
-                        continue; // SKIP THIS ADMIN, DO NOT CRASH
+                        continue;
                     }
 
                     const img = new Image();
@@ -157,12 +165,11 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
 
                     await new Promise((resolve, reject) => {
                         img.onload = resolve;
-                        img.onerror = (e) => reject(new Error(`Image load failed`));
+                        img.onerror = reject;
                         img.src = admin.faceIdData;
-                        setTimeout(() => reject(new Error("Image load timeout")), 2000);
+                        setTimeout(() => reject(new Error("Timeout")), 2000);
                     });
 
-                    // Use SsdMobilenetv1Options (Tiny is missing!)
                     const detections = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
                         .withFaceLandmarks()
                         .withFaceDescriptor();
@@ -171,8 +178,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     }
                 }
             } catch (err) {
-                console.warn(`Failed to process face for admin ${admin.username}:`, err);
-                // We do NOT rethrow here, so one bad profile doesn't kill the app.
+                console.warn(`Skipping profile: ${admin.username}`);
             }
         }
         return labeledDescriptors;
@@ -216,12 +222,23 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
         let lastBlinkTime = 0;
         startTimeRef.current = Date.now();
 
+        // INTELLIGENT ADAPTIVE THRESHOLD
+        // We start with the standard model.
+        // If we consistently find a face but it doesn't match, we assume poor lighting/angle
+        // and guide the user.
+
         return setInterval(async () => {
             if (!videoRef.current || !isOpen) return;
 
+            // 1. INTELLIGENT BRIGHTNESS CHECK
+            // Check if scene is too dark
+            if (videoRef.current.videoWidth > 0) {
+                // Simple sampling could go here, but for now we rely on detecion failure to infer it.
+            }
+
             // 2-SECOND TIMEOUT CHECK
             const elapsed = Date.now() - startTimeRef.current;
-            if (elapsed > 2000 && currentPhase === 'scanning') {
+            if (elapsed > 4000 && currentPhase === 'scanning') { // Give more time (4s) for angle adjustment
                 clearInterval(detectionIntervalRef.current);
                 handleStrictFailure("Temps écoulé");
                 return;
@@ -235,25 +252,39 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                     .withFaceExpressions();
 
                 if (detections.length > 1) {
-                    return; // Ignore crowd
+                    setScanMessage("Une seule personne à la fois !");
+                    return;
                 }
 
                 if (detections.length > 0) {
                     const detection = detections[0];
+                    // USE 0.6 THRESHOLD (INTELLIGENT/PERMISSIVE)
+                    // The FaceMatcher passed in is already configured, but we can double check logic here.
                     const match = faceMatcher.findBestMatch(detection.descriptor);
+
+                    // CUSTOM INTELLIGENT LOGIC
+                    // face-api 'unknown' means distance > threshold.
+                    // We want to handle "almost" matches (e.g. distance 0.65) by asking for better angle.
+
                     const isIdentityValid = match.label !== 'unknown' && !match.label.startsWith('error_');
 
                     if (currentPhase === 'scanning') {
                         if (isIdentityValid) {
-                            const admin = adminAccounts.find(a => a.username === match.label);
+                            // MATCH AGAINST FETCHED ADMINS
+                            const admin = activeAdminsRef.current.find(a => a.username === match.label);
                             if (admin) {
                                 pendingAdminRef.current = admin;
                                 currentPhase = 'liveness';
-                                // Silent, swift transition
+                                setScanMessage("Identité vérifiée. Analyse vitale...");
                             }
+                        } else {
+                            // INTELLIGENT FEEDBACK
+                            // If we see a face but don't recognize it
+                            setScanMessage("Ajustez l'angle ou la lumière...");
                         }
                     }
                     else if (currentPhase === 'liveness') {
+                        // ... (existing liveness logic)
                         if (!isIdentityValid || (pendingAdminRef.current && match.label !== pendingAdminRef.current.username)) {
                             clearInterval(detectionIntervalRef.current);
                             handleStrictFailure("Identité perdue");
@@ -268,8 +299,8 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                             lastBlinkTime = Date.now();
                             livenessSequence += 2;
                         }
-                        // Smile (Keep strictly as optional fallback)
-                        if (detection.expressions.happy > 0.7) livenessSequence++;
+                        // Smile OR Happy Expression (More robust)
+                        if (detection.expressions.happy > 0.5 || detection.expressions.surprised > 0.5) livenessSequence++;
 
                         // SUCCESS
                         if (livenessSequence > 2) {
@@ -282,6 +313,8 @@ const FaceLogin = ({ isOpen, onClose, onLogin, adminAccounts }) => {
                             }, 1000); // Show green success for 1s
                         }
                     }
+                } else {
+                    setScanMessage("Recherche de visage...");
                 }
             } catch (err) { }
         }, 200);
