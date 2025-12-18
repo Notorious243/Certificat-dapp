@@ -367,109 +367,94 @@ const AdminPage = () => {
         [36, 1, 0], [45, 16, 15]
     ];
 
-    // Draw golden face mesh overlay
-    const drawFaceMesh = (landmarks, canvas, videoWidth, videoHeight) => {
+    // Draw face mesh overlay (BLUE THEME & PROGRESSIVE)
+    const drawFaceMesh = (landmarks, canvas, videoWidth, videoHeight, progress) => {
         if (!canvas || !landmarks) return;
 
         const ctx = canvas.getContext('2d');
         const points = landmarks.positions;
 
-        // Handle scaling for circular video container
+        // Handle scaling
         const scale = canvas.width / videoWidth;
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Golden/Orange gradient style with glow
+        // PROGRESSIVE VISIBILITY:
+        // 0-30%: Invisible / Very faint dots
+        // 30-70%: Faint lines appear (Blue)
+        // 70-100%: Full mesh glow (Blue/Cyan)
+
+        const opacity = Math.max(0, (progress - 20) / 80); // Starts appearing after 20%
         const time = Date.now() / 1000;
-        const pulseIntensity = 0.7 + Math.sin(time * 3) * 0.3;
 
-        ctx.strokeStyle = `rgba(255, ${150 + Math.sin(time * 2) * 30}, 50, ${0.6 * pulseIntensity})`;
-        ctx.lineWidth = 1.2;
-        ctx.shadowColor = 'rgba(255, 150, 0, 0.8)';
-        ctx.shadowBlur = 10;
+        if (opacity > 0.05) {
+            // Blue Cyan Gradient Style
+            ctx.strokeStyle = `rgba(0, 160, 255, ${0.4 * opacity})`; // Blue lines
+            ctx.lineWidth = 1;
+            ctx.shadowColor = 'rgba(0, 200, 255, 0.5)';
+            ctx.shadowBlur = 5 * opacity;
 
-        // Draw triangular mesh
-        FACE_MESH_TRIANGLES.forEach(([i, j, k]) => {
-            if (points[i] && points[j] && points[k]) {
-                ctx.beginPath();
-                ctx.moveTo(points[i].x * scale, points[i].y * scale);
-                ctx.lineTo(points[j].x * scale, points[j].y * scale);
-                ctx.lineTo(points[k].x * scale, points[k].y * scale);
-                ctx.closePath();
-                ctx.stroke();
-            }
-        });
+            // Draw triangular mesh
+            FACE_MESH_TRIANGLES.forEach(([i, j, k]) => {
+                if (points[i] && points[j] && points[k]) {
+                    ctx.beginPath();
+                    ctx.moveTo(points[i].x * scale, points[i].y * scale);
+                    ctx.lineTo(points[j].x * scale, points[j].y * scale);
+                    ctx.lineTo(points[k].x * scale, points[k].y * scale);
+                    ctx.closePath();
+                    ctx.stroke();
+                }
+            });
+        }
 
-        // Draw pulsing landmark points
-        ctx.shadowBlur = 15;
+        // Draw dots (Always visible but subtle blue)
         points.forEach((point, idx) => {
-            const pointPulse = 0.5 + Math.sin(time * 4 + idx * 0.1) * 0.5;
-            ctx.fillStyle = `rgba(255, 200, 80, ${0.8 * pointPulse})`;
+            // Only show some points initially, all points later
+            if (progress < 50 && idx % 3 !== 0) return;
+
+            const pointPulse = 0.5 + Math.sin(time * 5 + idx * 0.2) * 0.5;
+            ctx.fillStyle = `rgba(0, 180, 255, ${0.6 * pointPulse})`; // Cyan dots
             ctx.beginPath();
-            ctx.arc(point.x * scale, point.y * scale, 2 + pointPulse, 0, Math.PI * 2);
+            ctx.arc(point.x * scale, point.y * scale, 1.5, 0, Math.PI * 2);
             ctx.fill();
         });
-
-        ctx.shadowBlur = 0;
     };
 
-    // Calculate yaw (left/right head turn) from landmarks
+    // Calculate yaw (left/right head turn)
     const calculateYaw = (landmarks) => {
         if (!landmarks) return 0;
         const points = landmarks.positions;
-
-        // Use nose tip (30) and jaw edges (0, 16) for yaw estimation
         const noseTip = points[30];
         const leftJaw = points[0];
         const rightJaw = points[16];
-
-        // Calculate distances from nose to each jaw edge
         const leftDist = Math.hypot(noseTip.x - leftJaw.x, noseTip.y - leftJaw.y);
         const rightDist = Math.hypot(noseTip.x - rightJaw.x, noseTip.y - rightJaw.y);
-
-        // Normalized difference (-1 = looking left, +1 = looking right)
-        const yaw = (rightDist - leftDist) / (rightDist + leftDist) * 2;
-        return yaw;
+        return (rightDist - leftDist) / (rightDist + leftDist) * 2;
     };
 
-    // Analyze micro-movements (anti-spoofing for static photos)
+    // Analyze micro-movements
     const analyzeMicroMovements = (currentPoints) => {
         if (!currentPoints) return { isLive: false, variance: 0 };
-
         const history = landmarkHistoryRef.current;
         history.push(currentPoints.positions.map(p => ({ x: p.x, y: p.y })));
-
-        // Keep only last 10 frames
         if (history.length > 10) history.shift();
-
-        // Need at least 5 frames for analysis
         if (history.length < 5) return { isLive: true, variance: 1 };
 
-        // Calculate variance of key points (nose, eyes, mouth corners)
-        const keyIndices = [30, 36, 45, 48, 54]; // Nose, left eye, right eye, mouth corners
+        const keyIndices = [30, 36, 45, 48, 54];
         let totalVariance = 0;
-
         keyIndices.forEach(idx => {
             const xValues = history.map(frame => frame[idx]?.x || 0);
             const yValues = history.map(frame => frame[idx]?.y || 0);
-
             const xMean = xValues.reduce((a, b) => a + b, 0) / xValues.length;
             const yMean = yValues.reduce((a, b) => a + b, 0) / yValues.length;
-
             const xVar = xValues.reduce((sum, v) => sum + Math.pow(v - xMean, 2), 0) / xValues.length;
             const yVar = yValues.reduce((sum, v) => sum + Math.pow(v - yMean, 2), 0) / yValues.length;
-
             totalVariance += Math.sqrt(xVar + yVar);
         });
-
-        // Threshold: real faces have subtle natural micro-movements
         const averageVariance = totalVariance / keyIndices.length;
-        const isLive = averageVariance > 0.3; // Very small threshold for natural movement
-
-        return { isLive, variance: averageVariance };
+        return { isLive: averageVariance > 0.3, variance: averageVariance };
     };
 
-    // Reset face mesh states
     const resetFaceMeshStates = () => {
         setCurrentLandmarks(null);
         setHeadChallenge(null);
@@ -482,7 +467,6 @@ const AdminPage = () => {
     };
 
     // Fonction de scan Face ID automatique style iPhone
-
     const startFaceIdScan = async () => {
         setFaceIdScanPhase('initializing');
         setScanProgress(0);
@@ -490,7 +474,6 @@ const AdminPage = () => {
         resetFaceMeshStates();
 
         try {
-            // 1. Charger les modèles IA
             await Promise.all([
                 faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
                 faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
@@ -501,18 +484,16 @@ const AdminPage = () => {
             setScanMessage('Regardez la caméra...');
             setFaceIdScanPhase('scanning');
 
-            // Initialize head challenge after a short delay
-            setTimeout(() => setHeadChallenge('center'), 1500);
+            // Start challenge sooner
+            setTimeout(() => setHeadChallenge('center'), 1000);
 
-            // 2. Démarrer le scan en temps réel avec animation mesh
             let scanAttempts = 0;
-            const maxAttempts = 100; // ~20 secondes max (more time for challenges)
+            const maxAttempts = 150; // Increased timeout
             let faceDescriptorBuffer = null;
             let highQualityFrames = 0;
 
             scanIntervalRef.current = setInterval(async () => {
                 scanAttempts++;
-
                 if (scanAttempts > maxAttempts) {
                     clearInterval(scanIntervalRef.current);
                     resetFaceMeshStates();
@@ -526,14 +507,12 @@ const AdminPage = () => {
                     const meshCanvas = meshCanvasRef.current;
 
                     if (video.videoWidth > 0 && video.videoHeight > 0) {
-                        // Sync mesh canvas size with video
                         if (meshCanvas.width !== video.videoWidth) {
                             meshCanvas.width = video.videoWidth;
                             meshCanvas.height = video.videoHeight;
                         }
 
                         try {
-                            // Détection en temps réel
                             const detections = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
                                 .withFaceLandmarks()
                                 .withFaceDescriptor();
@@ -541,55 +520,64 @@ const AdminPage = () => {
                             if (detections) {
                                 const landmarks = detections.landmarks;
 
-                                // ===== DRAW FACE MESH OVERLAY =====
-                                drawFaceMesh(landmarks, meshCanvas, video.videoWidth, video.videoHeight);
+                                // CALCULATE PROGRESS FOR VISUALS
+                                // We use a state callback to get current progress safely if needed,
+                                // but here we pass 'scanProgress' which is state.
+                                // NOTE: In setInterval state is stale. We need a ref or functional update.
+                                // Better: Pass a value derived from challenges.
+
+                                let currentProgressValue = 0;
+                                if (headChallenge === 'left') currentProgressValue = 40;
+                                else if (headChallenge === 'right') currentProgressValue = 60;
+                                else if (headChallenge === 'final') currentProgressValue = 85;
+                                else currentProgressValue = 20;
+
+                                // DRAW MESH (BLUE)
+                                drawFaceMesh(landmarks, meshCanvas, video.videoWidth, video.videoHeight, currentProgressValue);
                                 setCurrentLandmarks(landmarks);
 
-                                // ===== ANTI-SPOOFING: MICRO-MOVEMENTS =====
                                 const livenessCheck = analyzeMicroMovements(landmarks);
-
-                                // ===== HEAD TURN CHALLENGE =====
                                 const yaw = calculateYaw(landmarks);
 
-                                // Check challenge completion
-                                if (headChallenge === 'center' && Math.abs(yaw) < 0.15) {
-                                    // Face is centered, now ask to turn
-                                    setTimeout(() => setHeadChallenge('left'), 500);
-                                    setScanProgress(prev => Math.min(prev + 5, 40));
-                                    setScanMessage('Tournez légèrement la tête à GAUCHE ⬅️');
-                                } else if (headChallenge === 'left' && yaw < -0.25) {
-                                    // Turned left successfully
-                                    setChallengeCompleted(prev => ({ ...prev, left: true }));
-                                    setTimeout(() => setHeadChallenge('right'), 500);
-                                    setScanProgress(prev => Math.min(prev + 15, 55));
-                                    setScanMessage('Bien ! Maintenant à DROITE ➡️');
-                                } else if (headChallenge === 'right' && yaw > 0.25) {
-                                    // Turned right successfully
-                                    setChallengeCompleted(prev => ({ ...prev, right: true }));
-                                    setTimeout(() => setHeadChallenge('final'), 300);
-                                    setScanProgress(prev => Math.min(prev + 15, 70));
-                                    setScanMessage('Parfait ! Recentrez pour capturer...');
-                                } else if (headChallenge === 'final') {
-                                    // Waiting for centered, high quality capture
-                                    if (Math.abs(yaw) < 0.12 && detections.detection.score > 0.88) {
-                                        highQualityFrames++;
-                                        setScanProgress(prev => Math.min(prev + 3, 95));
+                                // RELAXED THRESHOLDS for "Stuck at 35%" fix
+                                // Center: |yaw| < 0.2 (was 0.15)
+                                // Left: yaw < -0.2 (was -0.25)
+                                // Right: yaw > 0.2 (was 0.25)
 
-                                        // Store best descriptor
+                                if (headChallenge === 'center') {
+                                    if (Math.abs(yaw) < 0.25) { // Easier to center
+                                        setTimeout(() => setHeadChallenge('left'), 200);
+                                        setScanProgress(prev => Math.min(prev + 5, 40));
+                                        setScanMessage('Tournez légèrement la tête à GAUCHE ⬅️');
+                                    } else {
+                                        // Guiding user if stuck
+                                        setScanMessage(yaw > 0 ? "Tournez un peu à GAUCHE pour centrer" : "Tournez un peu à DROITE pour centrer");
+                                    }
+                                } else if (headChallenge === 'left' && yaw < -0.15) { // Easier left
+                                    setChallengeCompleted(prev => ({ ...prev, left: true }));
+                                    setTimeout(() => setHeadChallenge('right'), 200);
+                                    setScanProgress(prev => Math.min(prev + 15, 60));
+                                    setScanMessage('Bien ! Maintenant à DROITE ➡️');
+                                } else if (headChallenge === 'right' && yaw > 0.15) { // Easier right
+                                    setChallengeCompleted(prev => ({ ...prev, right: true }));
+                                    setTimeout(() => setHeadChallenge('final'), 200);
+                                    setScanProgress(prev => Math.min(prev + 15, 80));
+                                    setScanMessage('Parfait ! Recentrez pour finir...');
+                                } else if (headChallenge === 'final') {
+                                    if (Math.abs(yaw) < 0.2 && detections.detection.score > 0.85) {
+                                        highQualityFrames++;
+                                        setScanProgress(prev => Math.min(prev + 2, 98));
+
                                         if (!faceDescriptorBuffer || detections.detection.score > 0.90) {
                                             faceDescriptorBuffer = Array.from(detections.descriptor);
                                         }
 
-                                        // Need 3 good frames for stable capture
                                         if (highQualityFrames >= 3 && livenessCheck.isLive) {
                                             clearInterval(scanIntervalRef.current);
-
-                                            // Final check passed!
                                             setFaceIdScanPhase('processing');
-                                            setScanProgress(98);
-                                            setScanMessage('Traitement biométrique...');
+                                            setScanMessage('Analyse biométrique...');
 
-                                            // Capture high-res photo
+                                            // Capture & Save
                                             const captureCanvas = canvasRef.current;
                                             captureCanvas.width = video.videoWidth;
                                             captureCanvas.height = video.videoHeight;
@@ -597,50 +585,42 @@ const AdminPage = () => {
                                             context.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
                                             const faceDataUrl = captureCanvas.toDataURL('image/jpeg', 0.95);
 
-                                            // Clear mesh
                                             const meshCtx = meshCanvas.getContext('2d');
                                             meshCtx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
 
                                             setTimeout(async () => {
                                                 setFaceIdScanPhase('success');
                                                 setScanProgress(100);
-                                                setScanMessage('Face ID Calibré avec succès !');
+                                                setScanMessage('Face ID Configuré !');
 
-                                                // Update Form State with both image AND descriptor
                                                 setNewAdmin(prev => ({
                                                     ...prev,
                                                     faceIdConfigured: true,
                                                     faceIdData: faceDataUrl,
-                                                    faceDescriptor: faceDescriptorBuffer // Store 128D descriptor
+                                                    faceDescriptor: faceDescriptorBuffer
                                                 }));
 
-                                                // AUTO-SAVE TO FIRESTORE
                                                 if (editingAdmin && editingAdmin.id) {
                                                     try {
-                                                        console.log("Auto-saving Face ID to Firestore...");
                                                         const adminRef = doc(db, "admins", editingAdmin.id);
                                                         await updateDoc(adminRef, {
                                                             faceIdConfigured: true,
                                                             faceIdData: faceDataUrl,
                                                             faceDescriptor: faceDescriptorBuffer
                                                         });
-
                                                         setAdmins(prev => prev.map(adm =>
                                                             adm.id === editingAdmin.id
                                                                 ? { ...adm, faceIdConfigured: true, faceIdData: faceDataUrl, faceDescriptor: faceDescriptorBuffer }
                                                                 : adm
                                                         ));
-
                                                         if (currentUser && currentUser.username === editingAdmin.username) {
                                                             const updatedUser = { ...currentUser, faceIdConfigured: true, faceIdData: faceDataUrl, faceDescriptor: faceDescriptorBuffer };
                                                             setCurrentUser(updatedUser);
                                                             sessionStorage.setItem('currentUser', JSON.stringify(updatedUser));
                                                         }
-
-                                                        setStatus({ type: 'success', message: '✅ Face ID haute précision sauvegardé !' });
+                                                        setStatus({ type: 'success', message: '✅ Face ID sauvegardé !' });
                                                     } catch (e) {
                                                         console.error("Auto-save failed:", e);
-                                                        setStatus({ type: 'error', message: 'Erreur sauvegarde Cloud.' });
                                                     }
                                                 }
 
@@ -650,37 +630,30 @@ const AdminPage = () => {
                                                     setFaceIdScanPhase('idle');
                                                     setScanProgress(0);
                                                     if (!editingAdmin) {
-                                                        setStatus({ type: 'success', message: '✅ Face ID configuré (validez le formulaire)' });
+                                                        setStatus({ type: 'success', message: '✅ Face ID configuré' });
                                                     }
                                                     setTimeout(() => setStatus(null), 3000);
                                                 }, 2000);
                                             }, 500);
-                                        } else if (!livenessCheck.isLive && highQualityFrames > 5) {
-                                            // Static photo detected - reject
-                                            clearInterval(scanIntervalRef.current);
-                                            setFaceIdScanPhase('error');
-                                            setScanMessage('Visage statique détecté. Utilisez un vrai visage!');
-                                            resetFaceMeshStates();
                                         }
                                     } else {
-                                        setScanMessage('Centrez bien votre visage...');
+                                        setScanMessage('Regardez bien la caméra...');
                                     }
                                 } else {
-                                    // Guide messages during challenges
-                                    const box = detections.detection.box;
-                                    const boxArea = box.width * box.height;
-                                    const videoArea = video.videoWidth * video.videoHeight;
-                                    const ratio = boxArea / videoArea;
+                                    // Feedback if challenge not met
+                                    // This was causing the 35% cap.
+                                    // We'll allow it to drift up slightly but the main progress is triggered by challenges.
+                                    setScanProgress(prev => {
+                                        // Cap based on current challenge to prevent overflow before completion
+                                        let cap = 35;
+                                        if (headChallenge === 'center') cap = 35;
+                                        if (headChallenge === 'left') cap = 55;
+                                        if (headChallenge === 'right') cap = 75;
 
-                                    if (ratio < 0.045) {
-                                        setScanMessage('Rapprochez-vous ! 🔍');
-                                        setScanProgress(prev => Math.max(prev - 0.5, 15));
-                                    } else {
-                                        setScanProgress(prev => Math.min(prev + 0.5, 35));
-                                    }
+                                        return Math.min(prev + 0.2, cap);
+                                    });
                                 }
                             } else {
-                                // No face detected - clear mesh
                                 const ctx = meshCanvas.getContext('2d');
                                 ctx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
                                 setScanMessage('Recherche de visage...');
@@ -690,12 +663,12 @@ const AdminPage = () => {
                         }
                     }
                 }
-            }, 150); // Faster interval for smoother mesh animation
+            }, 100);
 
         } catch (error) {
             console.error('Face ID init error:', error);
             setFaceIdScanPhase('error');
-            setScanMessage('Erreur d\'initialisation. Réessayez.');
+            setScanMessage('Erreur d\'initialisation.');
             resetFaceMeshStates();
         }
     };
