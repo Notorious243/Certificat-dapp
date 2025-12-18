@@ -144,19 +144,40 @@ const FaceLogin = ({ isOpen, onClose, onLogin }) => { // Remove adminAccounts pr
 
     const processLabeledImages = async (admins) => {
         const labeledDescriptors = [];
-        const activeAdmins = admins.filter(a => a.status === 'Active' && a.faceIdConfigured && a.faceIdData);
+        // Filter active admins with Face ID configured
+        const activeAdmins = admins.filter(a => a.status === 'Active' && a.faceIdConfigured);
+
+        console.log(`Processing ${activeAdmins.length} admins for Face ID...`);
 
         for (const admin of activeAdmins) {
             try {
-                if (admin.faceIdData) {
-                    // RIGOROUS DATA VALIDATION
-                    if (!admin.faceIdData.startsWith('data:image')) continue;
+                // 1. FAST PATH: Use stored 128D descriptor (New standard)
+                if (admin.faceDescriptor) {
+                    // Check if it's an array or object (Firestore sometimes stores as object)
+                    let descriptorArray = admin.faceDescriptor;
+                    if (!Array.isArray(descriptorArray) && typeof descriptorArray === 'object') {
+                        descriptorArray = Object.values(descriptorArray);
+                    }
 
+                    if (Array.isArray(descriptorArray) && descriptorArray.length === 128) {
+                        const float32Descriptor = new Float32Array(descriptorArray);
+                        labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(admin.username, [float32Descriptor]));
+                        console.log(`Loaded descriptor for ${admin.username} (Fast)`);
+                        continue;
+                    }
+                }
+
+                // 2. SLOW PATH: Use stored image (Legacy/Fallback)
+                if (admin.faceIdData && admin.faceIdData.startsWith('data:image')) {
+                    console.log(`Generating descriptor from image for ${admin.username} (Slow)...`);
+
+                    // Validation basic
                     try {
                         const base64Data = admin.faceIdData.split(',')[1];
                         if (!base64Data) throw new Error("No base64");
                         window.atob(base64Data);
                     } catch (e) {
+                        console.warn(`Invalid base64 for ${admin.username}`);
                         continue;
                     }
 
@@ -167,22 +188,28 @@ const FaceLogin = ({ isOpen, onClose, onLogin }) => { // Remove adminAccounts pr
                         img.onload = resolve;
                         img.onerror = reject;
                         img.src = admin.faceIdData;
-                        setTimeout(() => reject(new Error("Timeout")), 2000);
+                        setTimeout(() => reject(new Error("Image load timeout")), 3000);
                     });
 
+                    // Detect face from the stored image
                     const detections = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
                         .withFaceLandmarks()
                         .withFaceDescriptor();
+
                     if (detections) {
                         labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(admin.username, [detections.descriptor]));
+                        console.log(`Generated descriptor for ${admin.username}`);
+                    } else {
+                        console.warn(`No face found in stored image for ${admin.username}`);
                     }
                 }
             } catch (err) {
-                console.warn(`Skipping profile: ${admin.username}`);
+                console.warn(`Skipping profile: ${admin.username}`, err);
             }
         }
         return labeledDescriptors;
     };
+
 
     const startAttempt = () => {
         if (!faceMatcherRef.current) return;
