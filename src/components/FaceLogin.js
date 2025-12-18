@@ -89,7 +89,7 @@ const FaceLogin = ({ isOpen, onClose, onLogin }) => { // Remove adminAccounts pr
                 }
 
                 // 4. Fetch Admins from Firebase & Prepare Faces
-                setScanMessage("Synchronisation Cloud...");
+                setScanMessage("Chargement...");
 
                 // Fetch from Firestore
                 const querySnapshot = await getDocs(collection(db, "admins"));

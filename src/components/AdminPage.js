@@ -9,10 +9,22 @@ import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Label } from './ui/label';
 import {
-    Shield, AlertTriangle, CheckCircle, LogOut, FileCheck, FileX,
-    Network, Clock, Copy, FileText, Download, RefreshCw,
-    LayoutDashboard, Menu, ChevronRight, Users, Award, Eye, EyeOff,
-    Camera, Upload, X, Ban, ShieldAlert, Search, PanelLeft, Mail, ScanFace
+    LayoutDashboard,
+    Users,
+    FileText,
+    LogOut,
+    Plus,
+    Search,
+    Edit2,
+    Trash2,
+    CheckCircle,
+    XCircle,
+    Camera,
+    Upload,
+    ScanFace,
+    ChevronLeft,
+    ChevronRight,
+    Loader2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import CertificatePreview from './CertificatePreview';
@@ -553,16 +565,16 @@ const AdminPage = () => {
                                     if (Math.abs(yaw) < 0.25) {
                                         setHeadChallenge('left');
                                         setScanProgress(prev => Math.min(prev + 10, 40));
-                                        setScanMessage('Tournez la tête à GAUCHE ⬅️');
+                                        setScanMessage('Tournez la tête à GAUCHE');
                                     } else {
-                                        setScanMessage(yaw > 0 ? "Tournez à GAUCHE ⬅️" : "Tournez à DROITE ➡️");
+                                        setScanMessage(yaw > 0 ? "Tournez à GAUCHE" : "Tournez à DROITE");
                                         if (Math.abs(yaw) < 0.4) setScanProgress(prev => Math.min(prev + 1, 35));
                                     }
                                 } else if (currentChallenge === 'left' && yaw < -0.12) {
                                     setChallengeCompleted(prev => ({ ...prev, left: true }));
                                     setHeadChallenge('right');
                                     setScanProgress(prev => Math.min(prev + 20, 60));
-                                    setScanMessage('Bien ! Maintenant à DROITE ➡️');
+                                    setScanMessage('Bien ! Maintenant à DROITE');
                                 } else if (currentChallenge === 'right' && yaw > 0.12) {
                                     setChallengeCompleted(prev => ({ ...prev, right: true }));
                                     setHeadChallenge('final');
@@ -2602,20 +2614,22 @@ const AdminPage = () => {
                                         >
                                             {headChallenge === 'left' && (
                                                 <motion.div
-                                                    animate={{ x: [-10, -20, -10] }}
-                                                    transition={{ duration: 1, repeat: Infinity }}
-                                                    className="absolute left-2 text-4xl"
+                                                    initial={{ opacity: 0, x: 20 }}
+                                                    animate={{ opacity: 1, x: [0, -15, 0] }}
+                                                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                                                    className="absolute left-10 top-1/2 -translate-y-1/2 bg-blue-500/20 p-4 rounded-full backdrop-blur-sm border border-blue-400/30"
                                                 >
-                                                    ⬅️
+                                                    <ChevronLeft className="w-12 h-12 text-blue-400 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
                                                 </motion.div>
                                             )}
                                             {headChallenge === 'right' && (
                                                 <motion.div
-                                                    animate={{ x: [10, 20, 10] }}
-                                                    transition={{ duration: 1, repeat: Infinity }}
-                                                    className="absolute right-2 text-4xl"
+                                                    initial={{ opacity: 0, x: -20 }}
+                                                    animate={{ opacity: 1, x: [0, 15, 0] }}
+                                                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                                                    className="absolute right-10 top-1/2 -translate-y-1/2 bg-blue-500/20 p-4 rounded-full backdrop-blur-sm border border-blue-400/30"
                                                 >
-                                                    ➡️
+                                                    <ChevronRight className="w-12 h-12 text-blue-400 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
                                                 </motion.div>
                                             )}
                                         </motion.div>
