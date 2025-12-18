@@ -484,14 +484,15 @@ const AdminPage = () => {
             setScanMessage('Regardez la caméra...');
             setFaceIdScanPhase('scanning');
 
-            // Start challenge sooner
-            setTimeout(() => setHeadChallenge('center'), 1000);
+            // Start challenge sooner (FASTER)
+            setTimeout(() => setHeadChallenge('center'), 500);
 
             let scanAttempts = 0;
-            const maxAttempts = 150; // Increased timeout
+            const maxAttempts = 200;
             let faceDescriptorBuffer = null;
             let highQualityFrames = 0;
 
+            // FASTER INTERVAL (80ms vs 100-150ms)
             scanIntervalRef.current = setInterval(async () => {
                 scanAttempts++;
                 if (scanAttempts > maxAttempts) {
@@ -544,35 +545,41 @@ const AdminPage = () => {
                                 // Left: yaw < -0.2 (was -0.25)
                                 // Right: yaw > 0.2 (was 0.25)
 
+                                // OPTIMIZED THRESHOLDS & SPEEDS
+
                                 if (headChallenge === 'center') {
-                                    if (Math.abs(yaw) < 0.25) { // Easier to center
-                                        setTimeout(() => setHeadChallenge('left'), 200);
-                                        setScanProgress(prev => Math.min(prev + 5, 40));
+                                    if (Math.abs(yaw) < 0.25) {
+                                        setTimeout(() => setHeadChallenge('left'), 100); // 100ms delay
+                                        setScanProgress(prev => Math.min(prev + 8, 40)); // Faster increment
                                         setScanMessage('Tournez légèrement la tête à GAUCHE ⬅️');
                                     } else {
-                                        // Guiding user if stuck
-                                        setScanMessage(yaw > 0 ? "Tournez un peu à GAUCHE pour centrer" : "Tournez un peu à DROITE pour centrer");
+                                        setScanMessage(yaw > 0 ? "Tournez un peu à GAUCHE ⬅️" : "Tournez un peu à DROITE ➡️");
+                                        // Still allow some progress if close
+                                        if (Math.abs(yaw) < 0.4) setScanProgress(prev => Math.min(prev + 1, 35));
                                     }
-                                } else if (headChallenge === 'left' && yaw < -0.15) { // Easier left
+                                } else if (headChallenge === 'left' && yaw < -0.15) {
                                     setChallengeCompleted(prev => ({ ...prev, left: true }));
-                                    setTimeout(() => setHeadChallenge('right'), 200);
-                                    setScanProgress(prev => Math.min(prev + 15, 60));
+                                    setTimeout(() => setHeadChallenge('right'), 100); // 100ms delay
+                                    setScanProgress(prev => Math.min(prev + 20, 60)); // Big jump
                                     setScanMessage('Bien ! Maintenant à DROITE ➡️');
-                                } else if (headChallenge === 'right' && yaw > 0.15) { // Easier right
+                                } else if (headChallenge === 'right' && yaw > 0.15) {
                                     setChallengeCompleted(prev => ({ ...prev, right: true }));
-                                    setTimeout(() => setHeadChallenge('final'), 200);
-                                    setScanProgress(prev => Math.min(prev + 15, 80));
-                                    setScanMessage('Parfait ! Recentrez pour finir...');
+                                    setTimeout(() => setHeadChallenge('final'), 100); // 100ms delay
+                                    setScanProgress(prev => Math.min(prev + 20, 80)); // Big jump
+                                    setScanMessage('Parfait ! Recentrez...');
                                 } else if (headChallenge === 'final') {
                                     if (Math.abs(yaw) < 0.2 && detections.detection.score > 0.85) {
                                         highQualityFrames++;
-                                        setScanProgress(prev => Math.min(prev + 2, 98));
+                                        setScanProgress(prev => Math.min(prev + 5, 98)); // Fast finish
 
                                         if (!faceDescriptorBuffer || detections.detection.score > 0.90) {
                                             faceDescriptorBuffer = Array.from(detections.descriptor);
                                         }
 
-                                        if (highQualityFrames >= 3 && livenessCheck.isLive) {
+                                        // FASTER VALIDATION: 2 frames if score is high, or even 1 if super high
+                                        const requiredFrames = detections.detection.score > 0.96 ? 1 : 2;
+
+                                        if (highQualityFrames >= requiredFrames && livenessCheck.isLive) {
                                             clearInterval(scanIntervalRef.current);
                                             setFaceIdScanPhase('processing');
                                             setScanMessage('Analyse biométrique...');
@@ -633,8 +640,8 @@ const AdminPage = () => {
                                                         setStatus({ type: 'success', message: '✅ Face ID configuré' });
                                                     }
                                                     setTimeout(() => setStatus(null), 3000);
-                                                }, 2000);
-                                            }, 500);
+                                                }, 1500); // Faster cleanup
+                                            }, 200); // Faster processing simulation
                                         }
                                     } else {
                                         setScanMessage('Regardez bien la caméra...');
@@ -650,7 +657,7 @@ const AdminPage = () => {
                                         if (headChallenge === 'left') cap = 55;
                                         if (headChallenge === 'right') cap = 75;
 
-                                        return Math.min(prev + 0.2, cap);
+                                        return Math.min(prev + 0.5, cap); // Faster drift
                                     });
                                 }
                             } else {
@@ -663,7 +670,7 @@ const AdminPage = () => {
                         }
                     }
                 }
-            }, 100);
+            }, 80); // FASTER INTERVAL
 
         } catch (error) {
             console.error('Face ID init error:', error);
