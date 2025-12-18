@@ -217,11 +217,7 @@ const LandingPage = () => {
                 <NavBody>
                     <NavbarLogo>
                         <div className="flex items-center gap-3">
-                            <img src="/logo certificat.png" alt="GouvChain Logo" className="h-12 w-auto block group-data-[visible=true]:hidden" />
-                            <img src="/logo-white.png" alt="GouvChain Logo" className="h-12 w-auto hidden group-data-[visible=true]:block" />
-                            <span className="text-2xl font-bold tracking-tight" style={{ fontFamily: '"Outfit", sans-serif' }}>
-                                <span className="text-[#152b68] group-data-[visible=true]:text-white transition-colors">Gouv</span><span className="text-blue-600 group-data-[visible=true]:text-blue-300 transition-colors">chain</span>
-                            </span>
+                            <img src="/header-logo.png" alt="GouvChain Logo" className="h-14 w-auto object-contain" />
                         </div>
                     </NavbarLogo>
                     <NavItems items={navItems} />
@@ -232,10 +228,7 @@ const LandingPage = () => {
                     <MobileNavHeader>
                         <NavbarLogo>
                             <div className="flex items-center gap-2.5">
-                                <img src="/logo certificat.png" alt="GouvChain Logo" className="h-10 w-auto" />
-                                <span className="text-xl font-bold tracking-tight" style={{ fontFamily: '"Outfit", sans-serif' }}>
-                                    <span className="text-[#152b68]">Gouv</span><span className="text-blue-600">chain</span>
-                                </span>
+                                <img src="/header-logo.png" alt="GouvChain Logo" className="h-12 w-auto object-contain" />
                             </div>
                         </NavbarLogo>
                         <MobileNavToggle
