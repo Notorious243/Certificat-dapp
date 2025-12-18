@@ -411,6 +411,7 @@ const LandingPage = () => {
                                         {companiesLogo.map((company, index) => (
                                             <img
                                                 key={`logo-1-${repeatIndex}-${index}`}
+                                                loading="lazy"
                                                 className={`mx-10 md:mx-16 h-16 md:h-20 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
                                                     ${company.name === 'Unikin' ? 'translate-y-1' : ''}
                                                     ${company.name === 'Numerique' ? 'scale-150' : ''}
@@ -427,6 +428,7 @@ const LandingPage = () => {
                                         {companiesLogo.map((company, index) => (
                                             <img
                                                 key={`logo-2-${repeatIndex}-${index}`}
+                                                loading="lazy"
                                                 className={`mx-10 md:mx-16 h-16 md:h-20 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300
                                                     ${company.name === 'Unikin' ? 'translate-y-1' : ''}
                                                     ${company.name === 'Numerique' ? 'scale-150' : ''}
@@ -588,6 +590,7 @@ const LandingPage = () => {
                                 >
                                     <div className="relative overflow-hidden rounded-2xl mb-6 bg-slate-100 aspect-[4/5]">
                                         <img
+                                            loading="lazy"
                                             src={student.image}
                                             alt={student.name}
                                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 grayscale group-hover:grayscale-0"

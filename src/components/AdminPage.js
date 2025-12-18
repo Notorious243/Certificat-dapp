@@ -597,13 +597,48 @@ const AdminPage = () => {
                                             setFaceIdScanPhase('processing');
                                             setScanMessage('Analyse biométrique...');
 
-                                            // Capture & Save
+                                            // === FACE-ONLY CROP & LIGHTING CHECK ===
+                                            const faceBox = detections.detection.box;
+                                            const padding = 40; // Extra padding around face
+
+                                            // Calculate crop region with padding
+                                            const cropX = Math.max(0, faceBox.x - padding);
+                                            const cropY = Math.max(0, faceBox.y - padding);
+                                            const cropWidth = Math.min(video.videoWidth - cropX, faceBox.width + padding * 2);
+                                            const cropHeight = Math.min(video.videoHeight - cropY, faceBox.height + padding * 2);
+
+                                            // Create cropped canvas (face only)
                                             const captureCanvas = canvasRef.current;
-                                            captureCanvas.width = video.videoWidth;
-                                            captureCanvas.height = video.videoHeight;
+                                            captureCanvas.width = cropWidth;
+                                            captureCanvas.height = cropHeight;
                                             const context = captureCanvas.getContext('2d');
-                                            context.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-                                            const faceDataUrl = captureCanvas.toDataURL('image/jpeg', 0.95);
+
+                                            // Draw only the face region
+                                            context.drawImage(
+                                                video,
+                                                cropX, cropY, cropWidth, cropHeight, // Source (face region)
+                                                0, 0, cropWidth, cropHeight // Destination (full canvas)
+                                            );
+
+                                            // Analyze brightness (lighting quality)
+                                            const imageData = context.getImageData(0, 0, cropWidth, cropHeight);
+                                            const pixels = imageData.data;
+                                            let totalBrightness = 0;
+                                            for (let i = 0; i < pixels.length; i += 4) {
+                                                // Calculate perceived brightness
+                                                totalBrightness += (pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114);
+                                            }
+                                            const avgBrightness = totalBrightness / (pixels.length / 4);
+
+                                            // Warn if lighting is poor (but still proceed)
+                                            if (avgBrightness < 60) {
+                                                console.warn('Low lighting detected:', avgBrightness);
+                                            } else if (avgBrightness > 220) {
+                                                console.warn('Overexposed lighting:', avgBrightness);
+                                            }
+
+                                            // Compress image (0.7 quality for smaller size, faster load)
+                                            const faceDataUrl = captureCanvas.toDataURL('image/jpeg', 0.7);
 
                                             const meshCtx = meshCanvas.getContext('2d');
                                             meshCtx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
