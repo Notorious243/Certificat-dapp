@@ -1381,8 +1381,8 @@ const AdminPage = () => {
 
             // Logo (Top Center)
             try {
-                const logoData = await loadImage('/header-logo.png');
-                doc.addImage(logoData, 'PNG', width / 2 - 25, 10, 50, 20); // Adjusted dimensions for wider logo
+                const logoData = await loadImage('/logo certificat.png');
+                doc.addImage(logoData, 'PNG', width / 2 - 15, 10, 30, 30);
             } catch (e) {
                 console.warn("Logo load failed", e);
             }
