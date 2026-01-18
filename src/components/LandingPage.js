@@ -6,7 +6,7 @@ import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { FileText, CheckCircle, Search, AlertTriangle, ExternalLink, ShieldCheck, Zap, Globe, ChevronDown, GraduationCap, Users, User, Award, FileKey, Database, Network, Code2, Twitter, Github, Linkedin, Mail, MapPin, ArrowRight, Facebook, Calendar, Building2, Download } from 'lucide-react';
 import { Particles } from "./ui/particles";
-import { PointerHighlight } from "./ui/pointer-highlight";
+
 import { AnimatedTooltip } from "./ui/animated-tooltip";
 import {
     Navbar,
@@ -277,9 +277,7 @@ const LandingPage = () => {
                         Authentification <br />
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#152b68] to-blue-500 inline-flex items-center gap-2 justify-center">
                             Officielle &
-                            <PointerHighlight className="inline-block">
-                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#152b68] to-blue-500">Sécurisée</span>
-                            </PointerHighlight>
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#152b68] to-blue-500">Sécurisée</span>
                         </span>
                     </motion.h1>
 
